@@ -30,6 +30,11 @@ def render(stats, interface, status, clear=False):
         for result in ml['recent'][-5:]:
             print(f"{result['source']} {result['decision']} {result['prediction']} "
                   f"score={result['score']:.3f} alert={result['alert']} evidence={result['evidence']}")
+            fragility = result.get('fragility', {})
+            if fragility.get('status') not in (None, 'not_applicable'):
+                print(f"  Evidence fragility: {fragility['status']} | "
+                      f"hypothetical pairs to change: {fragility.get('minimum_tested_pairs_to_change')} "
+                      "(advisory)")
     print("Press Ctrl+C to stop" if status == "CAPTURING" else "Capture stopped", flush=True)
 
 

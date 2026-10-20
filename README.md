@@ -124,3 +124,52 @@ Existing CICFlowMeter CSV columns are not automatically interchangeable with the
 ### Future extension points
 
 Feature extraction, classification, rule evidence, quality indicators, and streaming output are separate modules. This leaves room for future capture-quality-aware verification and evidence selection without treating those proposed research features as already implemented. Online retraining, anomaly detection for unknown attacks, calibration, endpoint-log correlation, and a web dashboard remain future work.
+
+### Research prototype: evidence fragility
+
+For a SYN_FLOOD prediction above the model threshold, NetGuard now asks:
+**“How many hypothetical missing handshake pairs would change this decision?”**
+The existing random forest is reused; existing model files work without retraining.
+Every replay/live JSONL prediction includes `fragility`; the terminal also displays
+applicable results. New training reports include advisory status counts, sensitive
+windows by true class, and full-detector throughput at each injected loss level.
+
+The extractor counts SYN flows with no observed replies, ACKs, or resets and room
+after their SYN inside the observed time span. The checker evaluates completing
+1 through at most 32 such flows with hypothetical 54-byte SYN+ACK/ACK pairs. It
+updates packet count, bytes, mean size, response/completion fractions, protocol
+fractions, and mean gap consistently; existing SYN rate and destinations stay fixed.
+All scenarios are scored together. The first scenario that changes the predicted
+class or drops its SYN_FLOOD score below threshold is reported as
+`minimum_tested_pairs_to_change`. No binary search or monotonic model assumption
+is used.
+
+For example, `status=sensitive, minimum_tested_pairs_to_change=2` means that one
+tested scenario adding four hypothetical packets changed the model decision.
+It does **not** mean those packets existed, that the capture lost four packets,
+or that the original traffic was benign. An alternative prediction can be another
+attack class. Original features, predictions, decisions, and alert behavior remain
+intact. This advisory helps identify alerts needing additional evidence; it is not
+an automatic false-positive filter.
+
+`unchanged_in_tested_scenarios` means only that this restricted search found no
+change, not that the alert is correct or robust to all missing traffic. The result
+reports when the 32-pair cap truncates the search. `unavailable` covers missing
+context, no eligible flows, or recorded queue/state loss; other predictions are
+`not_applicable`. Capture loss remains unknown. TCP sequence validation, alternate
+packet sizes, partially observed handshakes, asymmetric routing, and repairs outside
+the observed span are not modeled.
+
+**Research hypothesis:** this restricted sensitivity measure can help prioritize
+verification of SYN-flood alerts under incomplete capture. Accuracy improvement,
+publication novelty, and patentability have not been established. Evaluate on
+independent benign bursts and SYN floods with clean, random-loss, burst-loss, and
+one-direction-loss captures. Compare against classifier confidence at matched
+review budgets; count missed attacks and review load as well as false alerts.
+The synthetic demo alone cannot validate this hypothesis.
+
+Related prior work includes [packet-trace quality analysis](https://research.chalmers.se/en/publication/165423),
+[uncertainty-aware intrusion detection](https://link.springer.com/article/10.1007/s40860-024-00238-8),
+and [counterfactual DDoS diagnosis](https://www.sciencedirect.com/science/article/pii/S2214212622000163).
+The proposed research contribution is the specific bounded handshake sensitivity
+measure and its empirical utility, not the general use of uncertainty or counterfactuals.

@@ -9,7 +9,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from backend.ml.features import FEATURES, SCHEMA
 from backend.ml.replay import replay
-from backend.ml.detector import baseline
+from backend.ml.detector import baseline, Detector
 
 
 def load_manifest(path):
@@ -112,6 +112,7 @@ def train(manifest, output):
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, output)
+    detector = Detector(output)
     report = {'scope': scope, 'sklearn_version': sklearn.__version__,
               'delay_note': 'Seconds from first retained capture packet; session-wide attacks, not mixed-traffic onset latency', 'threshold': threshold, 'features': FEATURES,
               'train_windows': len(y), 'validation_windows': len(vy), 'tests': {}}
@@ -124,7 +125,20 @@ def train(manifest, output):
         elapsed = time.perf_counter()-started
         predictions = [str(model.classes_[i]) if model.classes_[i] == 'BENIGN' or score >= threshold else 'UNCERTAIN'
                        for i, score in zip(p.argmax(axis=1), p.max(axis=1))]
+        advisory_started = time.perf_counter()
+        advisory = [detector.predict(row)['fragility'] for row in rows]
+        advisory_elapsed = time.perf_counter() - advisory_started
+        fragility_counts = {status: sum(a['status'] == status for a in advisory)
+                            for status in ('sensitive', 'unchanged_in_tested_scenarios',
+                                           'unavailable', 'not_applicable')}
         report['tests'][str(loss)] = {
+            'fragility': {'status_counts': fragility_counts,
+                          'sensitive_by_true_class': {
+                              label: sum(a['status'] == 'sensitive' and actual == label
+                                         for a, actual in zip(advisory, truth))
+                              for label in sorted(set(truth))},
+                          'full_detector_windows_per_second': len(rows) / max(advisory_elapsed, 1e-9),
+                          'note': 'Advisory only; does not alter predictions or establish capture loss'},
             'ml': metrics(truth, predictions, rows, ids, sessions),
             'baseline': metrics(truth, [baseline(r['features']) for r in rows], rows, ids, sessions),
             'feature_replay_windows_per_second': len(rows)/max(replay_elapsed, 1e-9),

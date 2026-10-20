@@ -82,7 +82,15 @@ class FeatureExtractor:
             outgoing = [e for e in events if not e[2]]
             syns = {e[3] for e in outgoing if 'SYN' in e[1].tcp_flags and 'ACK' not in e[1].tcp_flags}
             synacks = {e[3] for e in events if e[2] and {'SYN', 'ACK'} <= set(e[1].tcp_flags)}
-            completed = {e[3] for e in outgoing if 'ACK' in e[1].tcp_flags and 'SYN' not in e[1].tcp_flags} & syns & synacks
+            acks = {e[3] for e in outgoing if 'ACK' in e[1].tcp_flags and 'SYN' not in e[1].tcp_flags}
+            completed = acks & syns & synacks
+            # Only model missing pairs for SYN flows without observed replies,
+            # ACKs or resets, and with room inside the observed time span.
+            replies = {e[3] for e in events if e[2]}
+            resets = {e[3] for e in events if 'RST' in e[1].tcp_flags}
+            early_syns = {e[3] for e in outgoing if 'SYN' in e[1].tcp_flags
+                          and 'ACK' not in e[1].tcp_flags and e[0] < events[-1][0]}
+            repairable = (syns & early_syns) - replies - acks - resets
             n = len(events)
             values = [n, sum(e[1].packet_size for e in events)/self.window,
                       len({e[1].destination_port for e in outgoing if e[1].destination_port is not None}),
@@ -96,6 +104,8 @@ class FeatureExtractor:
                       (events[-1][0]-events[0][0])/max(n-1, 1),
                       len(completed)/max(len(syns), 1)]
             rows.append({'timestamp': t, 'source': actor, 'features': dict(zip(FEATURES, values)),
+                         'handshake_context': {'syn_flows': len(syns), 'completed_flows': len(completed),
+                                               'repairable_flows': len(repairable), 'window_seconds': self.window},
                          'quality': {'state_evictions': self.evictions, 'late_packets': self.late_packets,
                                      'capture_loss': 'unknown'}})
         return rows
