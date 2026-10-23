@@ -39,7 +39,10 @@ def render(stats, interface, status, clear=False):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="NetGuard v0.1 packet metadata monitor")
+    parser = argparse.ArgumentParser(description="NetGuard - Evidence-Aware Network Threat Observatory")
+    parser.add_argument("--server", action="store_true", help="Launch FastAPI web console service")
+    parser.add_argument("--host", default="127.0.0.1", help="Server bind host (default: 127.0.0.1 loopback only)")
+    parser.add_argument("--port", type=int, default=8000, help="Server port (default: 8000)")
     parser.add_argument("--list-interfaces", action="store_true")
     parser.add_argument("--interface", help="Interface name; defaults to Scapy's route-selected interface")
     parser.add_argument("--pcap", help="Replay a PCAP file instead of live capture")
@@ -48,6 +51,14 @@ def main(argv=None):
     parser.add_argument('--model', help='Trusted locally trained NetGuard joblib model')
     parser.add_argument('--predictions', help='Write every ML window to JSONL (requires --model)')
     args = parser.parse_args(argv)
+
+    if args.server:
+        import uvicorn
+        from backend.api.app import app
+        print(f"Starting NetGuard Observatory Web Service at http://{args.host}:{args.port}")
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        return 0
+
     if args.predictions and not args.model:
         parser.error('--predictions requires --model')
     if args.refresh <= 0 or not math.isfinite(args.refresh):
