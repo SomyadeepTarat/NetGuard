@@ -4,15 +4,18 @@ import {
   FileText,
   Search,
   Download,
-  Info,
   CheckCircle2,
-  HelpCircle,
   Shield,
   Eye,
-  X
+  X,
+  RefreshCw,
+  Sliders,
+  Activity,
+  Layers
 } from 'lucide-react'
 import type { EvidencePassport } from '../types'
 import { api } from '../api'
+import { PageHeader } from './PageHeader'
 
 export const AlertsView: React.FC = () => {
   const [alerts, setAlerts] = useState<EvidencePassport[]>([])
@@ -40,7 +43,7 @@ export const AlertsView: React.FC = () => {
       setAlerts(res.alerts)
       setTotal(res.total)
     } catch (e) {
-      console.error(e)
+      console.error('Failed to query Evidence Passports:', e)
     } finally {
       setLoading(false)
     }
@@ -48,7 +51,7 @@ export const AlertsView: React.FC = () => {
 
   useEffect(() => {
     fetchAlerts()
-  }, [page, classFilter, severityFilter, search, redactIps])
+  }, [page, limit, classFilter, severityFilter, search, redactIps])
 
   const getClassBadge = (cls: string) => {
     switch (cls) {
@@ -65,28 +68,123 @@ export const AlertsView: React.FC = () => {
     }
   }
 
+  const handleResetFilters = () => {
+    setSearch('')
+    setClassFilter('')
+    setSeverityFilter('')
+    setPage(0)
+  }
+
   return (
     <div>
-      {/* Top Filter and Actions Bar */}
-      <div className="card" style={{ padding: '14px 18px', marginBottom: '14px' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '240px' }}>
-            <Search size={16} style={{ color: 'var(--text-muted)' }} />
+      {/* Page Header */}
+      <PageHeader
+        title="Alerts & Evidence Passports"
+        description="Auditable incident records correlating deterministic rule triggers, ML classifier scores, capture-quality context, and counterfactual fragility."
+        icon={<AlertTriangle size={20} />}
+        badge={
+          <span className="badge badge-healthy">
+            {total} Incident Passports Stored
+          </span>
+        }
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <a
+              href={`/api/alerts/export/json?redact_ips=${redactIps}`}
+              download
+              className="btn btn-secondary"
+              title="Export all evidence records as structured JSON"
+            >
+              <Download size={13} /> JSON
+            </a>
+            <a
+              href={`/api/alerts/export/csv?redact_ips=${redactIps}`}
+              download
+              className="btn btn-secondary"
+              title="Export all evidence records as flat CSV"
+            >
+              <Download size={13} /> CSV
+            </a>
+            <button
+              className="btn btn-secondary"
+              onClick={fetchAlerts}
+              disabled={loading}
+              title="Refresh alerts"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            </button>
+          </div>
+        }
+      />
+
+      {/* Filter and Query Toolbar */}
+      <div className="card" style={{ padding: '14px 18px', marginBottom: '18px' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          {/* Search Box */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flex: 1,
+              minWidth: '260px',
+              position: 'relative',
+            }}
+          >
+            <Search
+              size={15}
+              style={{
+                position: 'absolute',
+                left: '10px',
+                color: 'var(--color-text-muted)',
+              }}
+            />
             <input
               type="text"
               className="input-text"
-              style={{ width: '100%', maxWidth: '340px' }}
-              placeholder="Filter by Alert ID or IP endpoint..."
+              style={{ width: '100%', paddingLeft: '32px' }}
+              placeholder="Search by Alert ID, source IP, or target IP..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value)
                 setPage(0)
               }}
             />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--color-text-muted)',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            {/* Class filter */}
+          {/* Filters & Redact Toggle */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              flexWrap: 'wrap',
+            }}
+          >
+            {/* Detector Class Filter */}
             <select
               className="select-input"
               value={classFilter}
@@ -102,7 +200,7 @@ export const AlertsView: React.FC = () => {
               <option value="ANOMALOUS_UNKNOWN_PATTERN">Anomalous / Unknown</option>
             </select>
 
-            {/* Severity filter */}
+            {/* Severity / Decision Filter */}
             <select
               className="select-input"
               value={severityFilter}
@@ -116,23 +214,26 @@ export const AlertsView: React.FC = () => {
               <option value="UNCERTAIN">Uncertain / Review Needed</option>
             </select>
 
-            {/* Redact IP toggle */}
-            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+            {/* Redact IP Toggle */}
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '12px',
+                cursor: 'pointer',
+                color: 'var(--color-text-secondary)',
+                userSelect: 'none',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={redactIps}
                 onChange={(e) => setRedactIps(e.target.checked)}
+                style={{ accentColor: 'var(--color-accent)' }}
               />
-              Redact IPs (Demo Safe)
+              <span>Pseudonymize IPs</span>
             </label>
-
-            {/* Export buttons */}
-            <a href={`/api/alerts/export/json?redact_ips=${redactIps}`} download className="btn btn-secondary">
-              <Download size={13} /> JSON
-            </a>
-            <a href={`/api/alerts/export/csv?redact_ips=${redactIps}`} download className="btn btn-secondary">
-              <Download size={13} /> CSV
-            </a>
           </div>
         </div>
       </div>
@@ -144,91 +245,180 @@ export const AlertsView: React.FC = () => {
             <thead>
               <tr>
                 <th>Alert Identifier</th>
-                <th>Time (UTC)</th>
-                <th>Source IP</th>
-                <th>Target IP</th>
-                <th>Detector Classification</th>
-                <th>Uncalibrated Score</th>
+                <th>Observed Timestamp</th>
+                <th>Endpoints (Source → Target)</th>
+                <th>Classification</th>
+                <th>Detector Score</th>
                 <th>Decision</th>
-                <th>Evidence Status</th>
-                <th>Action</th>
+                <th>Capture Quality</th>
+                <th style={{ textAlign: 'right' }}>Evidence Passport</th>
               </tr>
             </thead>
             <tbody>
               {alerts.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                    {loading ? 'Querying Evidence Passport repository...' : 'No suspicious incidents recorded matching criteria.'}
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 20px' }}>
+                    {loading ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '10px',
+                          color: 'var(--color-text-secondary)',
+                        }}
+                      >
+                        <RefreshCw size={24} className="animate-spin" style={{ color: 'var(--color-accent)' }} />
+                        <span>Querying Evidence Passport repository...</span>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '10px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: '42px',
+                            height: '42px',
+                            borderRadius: '50%',
+                            background: 'var(--color-surface-muted)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            color: 'var(--color-text-muted)',
+                          }}
+                        >
+                          <FileText size={22} />
+                        </div>
+                        <div style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>
+                          No Incident Passports Recorded
+                        </div>
+                        <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', maxWidth: '440px', lineHeight: 1.5 }}>
+                          {search || classFilter || severityFilter
+                            ? 'No incident records match the active filter criteria.'
+                            : 'Evidence Passports are generated when deterministic rule triggers or ML classifier confidence thresholds are reached. No anomalies or attacks have been flagged in this session.'}
+                        </div>
+                        {(search || classFilter || severityFilter) && (
+                          <button
+                            className="btn btn-secondary"
+                            onClick={handleResetFilters}
+                            style={{ marginTop: '4px' }}
+                          >
+                            Reset Filter Criteria
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
-                alerts.map((alt) => (
-                  <tr key={alt.alert_id}>
-                    <td style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>{alt.alert_id}</td>
-                    <td>{alt.iso_time}</td>
-                    <td>{alt.source_ip}</td>
-                    <td>{alt.destination_ip}</td>
-                    <td>{getClassBadge(alt.detector_class)}</td>
-                    <td>
-                      {alt.detector_score !== null ? (
-                        <span>
-                          {alt.detector_score.toFixed(3)}{' '}
-                          <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>(score)</span>
+                alerts.map((alt) => {
+                  const isSelected = selectedPassport?.alert_id === alt.alert_id
+                  return (
+                    <tr
+                      key={alt.alert_id}
+                      className={`table-row-clickable ${isSelected ? 'table-row-selected' : ''}`}
+                      onClick={() => setSelectedPassport(alt)}
+                      title="Click to inspect complete 9-section Evidence Passport"
+                    >
+                      {/* Alert ID */}
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-accent)' }}>
+                        {alt.alert_id}
+                      </td>
+
+                      {/* Time */}
+                      <td style={{ color: 'var(--color-text-secondary)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
+                        {alt.iso_time}
+                      </td>
+
+                      {/* Endpoints */}
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>
+                        <span>{alt.source_ip}</span>
+                        <span style={{ color: 'var(--color-text-muted)', margin: '0 6px' }}>→</span>
+                        <span>{alt.destination_ip}</span>
+                      </td>
+
+                      {/* Classification */}
+                      <td>{getClassBadge(alt.detector_class)}</td>
+
+                      {/* Detector Score */}
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>
+                        {alt.detector_score !== null ? (
+                          <span>
+                            {alt.detector_score.toFixed(3)}{' '}
+                            <span style={{ fontSize: '10px', color: 'var(--color-text-muted)' }}>
+                              ({alt.is_calibrated ? 'calibrated' : 'score'})
+                            </span>
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--color-text-muted)' }}>N/A</span>
+                        )}
+                      </td>
+
+                      {/* Decision */}
+                      <td>
+                        <span
+                          className={`badge ${
+                            alt.decision === 'SUSPECTED' ? 'badge-degraded' : 'badge-unknown'
+                          }`}
+                        >
+                          {alt.decision}
                         </span>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)' }}>N/A</span>
-                      )}
-                    </td>
-                    <td>
-                      <span
-                        className={`badge ${
-                          alt.decision === 'SUSPECTED' ? 'badge-degraded' : 'badge-unknown'
-                        }`}
-                      >
-                        {alt.decision}
-                      </span>
-                    </td>
-                    <td>
-                      <span
-                        className={`badge ${
-                          alt.capture_quality?.overall_status === 'HEALTHY'
-                            ? 'badge-healthy'
-                            : 'badge-degraded'
-                        }`}
-                      >
-                        {alt.capture_quality?.overall_status || 'UNKNOWN'}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        className="btn btn-secondary"
-                        style={{ padding: '3px 8px', fontSize: '11px' }}
-                        onClick={() => setSelectedPassport(alt)}
-                      >
-                        <Eye size={12} /> Inspect
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      {/* Evidence Quality */}
+                      <td>
+                        <span
+                          className={`badge ${
+                            alt.capture_quality?.overall_status === 'HEALTHY'
+                              ? 'badge-healthy'
+                              : 'badge-degraded'
+                          }`}
+                        >
+                          {alt.capture_quality?.overall_status || 'UNKNOWN'}
+                        </span>
+                      </td>
+
+                      {/* Action */}
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '3px 8px', fontSize: '11px' }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedPassport(alt)
+                          }}
+                        >
+                          <Eye size={12} /> Inspect
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination Bar */}
         <div
           style={{
             padding: '12px 18px',
-            borderTop: '1px solid var(--border-subtle)',
+            borderTop: '1px solid var(--color-border)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             fontSize: '12px',
-            color: 'var(--text-secondary)',
+            color: 'var(--color-text-secondary)',
+            background: 'var(--color-surface)',
           }}
         >
           <div>
-            Showing {alerts.length} of {total} incidents
+            Showing {alerts.length} of {total} incidents (Page {page + 1})
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
@@ -251,163 +441,302 @@ export const AlertsView: React.FC = () => {
 
       {/* Complete Evidence Passport Modal Inspector */}
       {selectedPassport && (
-        <div className="modal-overlay" onClick={() => setSelectedPassport(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '850px' }}>
+        <div className="modal-backdrop" onClick={() => setSelectedPassport(null)}>
+          <div
+            className="modal-card"
+            style={{ maxWidth: '880px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Passport Header */}
-            <div className="passport-header">
+            <div
+              style={{
+                padding: '18px 24px',
+                borderBottom: '1px solid var(--color-border)',
+                background: 'var(--color-surface-hover)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <FileText size={20} style={{ color: 'var(--accent-cyan)' }} />
-                  <h2 style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '-0.01em' }}>
-                    Incident Evidence Passport: {selectedPassport.alert_id}
+                  <FileText size={18} style={{ color: 'var(--color-accent)' }} />
+                  <h2 style={{ fontSize: '16px', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                    Evidence Passport: {selectedPassport.alert_id}
                   </h2>
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Timestamp: {selectedPassport.iso_time} | Ingestion Provenance: {selectedPassport.provenance}
-                </div>
-              </div>
-              <button
-                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-                onClick={() => setSelectedPassport(null)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Why Flagged (Plain English finding rationale) */}
-            <div className="callout callout-advisory" style={{ marginTop: 0, marginBottom: '14px' }}>
-              <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-              <div>
-                <strong>Why Flagged:</strong> {selectedPassport.why_flagged}
-              </div>
-            </div>
-
-            {/* Two Column Grid */}
-            <div className="passport-grid">
-              {/* Classification & Model Path */}
-              <div className="passport-section">
-                <div className="section-title">
-                  <Shield size={14} /> 1. Detection Classification
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                   {getClassBadge(selectedPassport.detector_class)}
-                  <span className={`badge ${selectedPassport.decision === 'SUSPECTED' ? 'badge-degraded' : 'badge-unknown'}`}>
+                  <span
+                    className={`badge ${
+                      selectedPassport.decision === 'SUSPECTED' ? 'badge-degraded' : 'badge-unknown'
+                    }`}
+                  >
                     {selectedPassport.decision}
                   </span>
                 </div>
-                <div style={{ fontSize: '12px', fontFamily: 'var(--font-mono)', marginBottom: '4px' }}>
-                  Classifier Score: {selectedPassport.detector_score !== null ? selectedPassport.detector_score.toFixed(4) : 'N/A'}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Calibrated: {selectedPassport.is_calibrated ? 'Yes' : 'No (Uncalibrated score; not attack probability)'}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                  Model Artifact Scope: {selectedPassport.model_scope}
+                <div style={{ fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)', marginTop: '4px' }}>
+                  Timestamp: {selectedPassport.iso_time} | Provenance: {selectedPassport.provenance}
                 </div>
               </div>
-
-              {/* Observation & Capture Quality */}
-              <div className="passport-section">
-                <div className="section-title">
-                  <Info size={14} /> 2. Observation Quality Context
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span className={`badge ${selectedPassport.capture_quality?.overall_status === 'HEALTHY' ? 'badge-healthy' : 'badge-degraded'}`}>
-                    {selectedPassport.capture_quality?.overall_status || 'UNKNOWN'}
-                  </span>
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  {selectedPassport.capture_quality?.overall_summary || 'Standard observation channels evaluated.'}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
-                  Queue Drops: {selectedPassport.capture_quality?.indicators?.find((i: any) => i.name.includes('Queue'))?.value ?? 0} | Flow Evictions: {selectedPassport.capture_quality?.indicators?.find((i: any) => i.name.includes('Evictions'))?.value ?? 0}
-                </div>
-              </div>
+              <button
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--color-text-secondary)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                }}
+                onClick={() => setSelectedPassport(null)}
+                aria-label="Close passport"
+              >
+                <X size={18} />
+              </button>
             </div>
 
-            {/* Explainable Rule Triggers with Measured Values & Units */}
-            <div className="passport-section" style={{ marginBottom: '16px' }}>
-              <div className="section-title">
-                <CheckCircle2 size={14} /> 3. Transparent Rule Evaluations
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {selectedPassport.rule_triggers.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No deterministic rules triggered for this observation window.</div>
-                ) : (
-                  selectedPassport.rule_triggers.map((rule) => (
-                    <div key={rule.rule_id} className="rule-pill triggered">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{rule.name} ({rule.rule_id})</span>
-                        <span className="badge badge-degraded">TRIGGERED</span>
-                      </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                        {rule.description}
-                      </div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-                        {Object.entries(rule.thresholds).map(([param, thresh]) => (
-                          <div key={param}>
-                            <span style={{ color: 'var(--text-muted)' }}>{param}:</span>{' '}
-                            <span style={{ color: 'var(--accent-rose)' }}>{rule.measured_values[param]}</span>{' '}
-                            <span style={{ color: 'var(--text-muted)' }}>({thresh})</span>
-                          </div>
-                        ))}
-                      </div>
+            {/* Passport Scrollable Body */}
+            <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {/* 1. Plain English Rationale: Why Flagged */}
+              <div className="callout callout-advisory" style={{ marginTop: 0, marginBottom: 0 }}>
+                <AlertTriangle size={18} style={{ flexShrink: 0 }} />
+                <div>
+                  <strong>Why Flagged:</strong> {selectedPassport.why_flagged}
+                  {selectedPassport.what_remains_uncertain && (
+                    <div style={{ marginTop: '4px', color: 'var(--color-text-secondary)' }}>
+                      <strong>Uncertainty Boundary:</strong> {selectedPassport.what_remains_uncertain}
                     </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Counterfactual Fragility Advisory (if SYN_FLOOD) */}
-            {selectedPassport.fragility?.status && selectedPassport.fragility.status !== 'not_applicable' && (
-              <div className="passport-section" style={{ marginBottom: '16px', borderColor: 'var(--accent-amber-border)' }}>
-                <div className="section-title" style={{ color: 'var(--accent-amber)' }}>
-                  <HelpCircle size={14} /> 4. Counterfactual Handshake Sensitivity (Advisory)
-                </div>
-                <div style={{ fontSize: '12px', marginBottom: '6px' }}>
-                  Fragility Status: <strong>{selectedPassport.fragility.status}</strong>
-                  {selectedPassport.fragility.minimum_tested_pairs_to_change !== null && (
-                    <span>
-                      {' '}— {selectedPassport.fragility.minimum_tested_pairs_to_change} hypothetical missing handshake pairs would alter this classification.
-                    </span>
                   )}
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Advisory only: Does not establish actual packet loss or prove that the traffic was benign.
-                </div>
-              </div>
-            )}
-
-            {/* What Remains Uncertain & Recommended Next Steps */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '14px', marginBottom: '16px' }}>
-              <div className="passport-section">
-                <div className="section-title">
-                  <HelpCircle size={14} /> What Remains Uncertain
-                </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  {selectedPassport.what_remains_uncertain}
-                </div>
               </div>
 
-              <div className="passport-section">
-                <div className="section-title">
-                  <Shield size={14} /> Recommended Safe Investigation Steps
+              {/* 2. Top Metric Cards: Classification & Quality */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                {/* Detection Classification */}
+                <div className="card" style={{ padding: '16px' }}>
+                  <div className="card-header" style={{ marginBottom: '10px', paddingBottom: '8px' }}>
+                    <div className="card-title" style={{ fontSize: '13px' }}>
+                      <Shield size={14} style={{ color: 'var(--color-accent)' }} />
+                      Detection Classification
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--color-text-secondary)' }}>Classifier Score:</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                        {selectedPassport.detector_score !== null
+                          ? selectedPassport.detector_score.toFixed(4)
+                          : 'N/A'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--color-text-secondary)' }}>Calibration Status:</span>
+                      <span style={{ color: 'var(--color-text-muted)' }}>
+                        {selectedPassport.is_calibrated
+                          ? 'Calibrated Probability'
+                          : 'Uncalibrated score (not attack probability)'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--color-text-secondary)' }}>Model Artifact Scope:</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+                        {selectedPassport.model_scope}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <ul style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  {selectedPassport.recommended_steps.map((step, idx) => (
-                    <li key={idx} style={{ marginBottom: '4px' }}>
-                      {step}
-                    </li>
+
+                {/* Observation Quality Context */}
+                <div className="card" style={{ padding: '16px' }}>
+                  <div className="card-header" style={{ marginBottom: '10px', paddingBottom: '8px' }}>
+                    <div className="card-title" style={{ fontSize: '13px' }}>
+                      <Activity size={14} style={{ color: 'var(--color-healthy)' }} />
+                      Observation Quality Context
+                    </div>
+                    <span
+                      className={`badge ${
+                        selectedPassport.capture_quality?.overall_status === 'HEALTHY'
+                          ? 'badge-healthy'
+                          : 'badge-degraded'
+                      }`}
+                    >
+                      {selectedPassport.capture_quality?.overall_status || 'UNKNOWN'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.45 }}>
+                    {selectedPassport.capture_quality?.overall_summary ||
+                      'Standard observation channel evaluated without loss.'}
+                  </div>
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      paddingTop: '6px',
+                      borderTop: '1px solid var(--color-border-subtle)',
+                      display: 'flex',
+                      gap: '12px',
+                      fontSize: '11px',
+                      color: 'var(--color-text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                    }}
+                  >
+                    <span>
+                      Drops:{' '}
+                      {selectedPassport.capture_quality?.indicators?.find((i: any) =>
+                        i.name.includes('Queue')
+                      )?.value ?? 0}
+                    </span>
+                    <span>
+                      Evictions:{' '}
+                      {selectedPassport.capture_quality?.indicators?.find((i: any) =>
+                        i.name.includes('Evictions')
+                      )?.value ?? 0}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Transparent Rule Evaluations */}
+              <div className="card" style={{ padding: '16px' }}>
+                <div className="card-header" style={{ marginBottom: '12px', paddingBottom: '8px' }}>
+                  <div className="card-title" style={{ fontSize: '13px' }}>
+                    <CheckCircle2 size={15} style={{ color: 'var(--color-accent)' }} />
+                    Deterministic Rule Evaluations
+                  </div>
+                </div>
+                {selectedPassport.rule_triggers.length === 0 ? (
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>
+                    No deterministic threshold rules triggered for this incident window. Finding was raised through model classification or anomaly baseline.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {selectedPassport.rule_triggers.map((rule) => (
+                      <div
+                        key={rule.rule_id}
+                        style={{
+                          padding: '10px 14px',
+                          background: 'var(--color-surface-hover)',
+                          border: '1px solid var(--color-border)',
+                          borderRadius: 'var(--radius-sm)',
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                          <span style={{ fontWeight: 600, color: 'var(--color-text-primary)', fontSize: '12.5px' }}>
+                            {rule.name} ({rule.rule_id})
+                          </span>
+                          <span className="badge badge-degraded">TRIGGERED</span>
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                          {rule.description}
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
+                          {Object.entries(rule.thresholds).map(([param, thresh]) => (
+                            <div key={param}>
+                              <span style={{ color: 'var(--color-text-muted)' }}>{param}: </span>
+                              <span style={{ color: 'var(--color-critical)', fontWeight: 600 }}>
+                                {rule.measured_values[param]}
+                              </span>
+                              <span style={{ color: 'var(--color-text-muted)' }}> (threshold: {thresh})</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 4. Engineered Traffic Features */}
+              <div className="card" style={{ padding: '16px' }}>
+                <div className="card-header" style={{ marginBottom: '12px', paddingBottom: '8px' }}>
+                  <div className="card-title" style={{ fontSize: '13px' }}>
+                    <Sliders size={15} style={{ color: 'var(--color-accent)' }} />
+                    Extracted Traffic Features (Observation Window)
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '10px' }}>
+                  {Object.entries(selectedPassport.evidence || {}).map(([key, val]) => (
+                    <div
+                      key={key}
+                      style={{
+                        padding: '8px 10px',
+                        background: 'var(--color-surface-hover)',
+                        border: '1px solid var(--color-border-subtle)',
+                        borderRadius: 'var(--radius-sm)',
+                      }}
+                    >
+                      <div style={{ fontSize: '10.5px', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                        {key}
+                      </div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--color-text-primary)', marginTop: '2px' }}>
+                        {typeof val === 'number' ? val.toFixed(4).replace(/\.?0+$/, '') : val}
+                      </div>
+                    </div>
                   ))}
-                </ul>
+                </div>
               </div>
-            </div>
 
-            {/* Footer Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button className="btn btn-secondary" onClick={() => setSelectedPassport(null)}>
-                Close Inspector
-              </button>
+              {/* 5. Anomaly Baseline Detector Status */}
+              {selectedPassport.anomaly && (
+                <div className="card" style={{ padding: '16px' }}>
+                  <div className="card-header" style={{ marginBottom: '10px', paddingBottom: '8px' }}>
+                    <div className="card-title" style={{ fontSize: '13px' }}>
+                      <Activity size={14} style={{ color: '#7c3aed' }} />
+                      Anomaly Detection Status
+                    </div>
+                    <span className="badge badge-anomaly">
+                      {selectedPassport.anomaly.is_anomalous ? 'ANOMALOUS' : 'WITHIN_BASELINE'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                    {selectedPassport.anomaly.note}
+                  </div>
+                  <div style={{ display: 'flex', gap: '14px', fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
+                    <span>Status: {selectedPassport.anomaly.status}</span>
+                    <span>Label: {selectedPassport.anomaly.label}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* 6. Counterfactual Fragility Assessment */}
+              {selectedPassport.fragility && (
+                <div className="card" style={{ padding: '16px' }}>
+                  <div className="card-header" style={{ marginBottom: '10px', paddingBottom: '8px' }}>
+                    <div className="card-title" style={{ fontSize: '13px' }}>
+                      <Layers size={14} style={{ color: 'var(--color-warning)' }} />
+                      Counterfactual Fragility & Replay Sensitivity
+                    </div>
+                    <span className="badge badge-unavailable">
+                      {selectedPassport.fragility.status || 'UNTESTED'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
+                    {selectedPassport.fragility.reason ||
+                      'Sensitivity testing evaluates whether this finding flips under hypothetical packet omission.'}
+                  </div>
+                  {selectedPassport.fragility.tested_scenarios && (
+                    <div style={{ marginTop: '8px', fontSize: '11px', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>
+                      Tested Scenarios: {selectedPassport.fragility.tested_scenarios} | Min Pairs to Flip: {selectedPassport.fragility.minimum_tested_pairs_to_change ?? 'None observed'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 7. Safe Human-Analyst Next Steps */}
+              <div className="card" style={{ padding: '16px', background: 'var(--color-surface-hover)' }}>
+                <div className="card-header" style={{ marginBottom: '10px', paddingBottom: '8px' }}>
+                  <div className="card-title" style={{ fontSize: '13px' }}>
+                    <Shield size={14} style={{ color: 'var(--color-healthy)' }} />
+                    Evidence-Supported Next Steps (Human Analyst Workflow)
+                  </div>
+                </div>
+                <ol style={{ paddingLeft: '18px', fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {(selectedPassport.recommended_steps || [
+                    'Cross-reference source endpoint with authorized maintenance windows or vulnerability scanners.',
+                    'Inspect destination port distribution to confirm horizontal sweep vs targeted service scan.',
+                    'Verify capture quality indicators to confirm no hardware or driver dropped frames.',
+                    'Run counterfactual replay in Replay Lab to assess detection sensitivity under packet loss.'
+                  ]).map((step, idx) => (
+                    <li key={idx} style={{ lineHeight: 1.45 }}>{step}</li>
+                  ))}
+                </ol>
+              </div>
             </div>
           </div>
         </div>
@@ -415,3 +744,5 @@ export const AlertsView: React.FC = () => {
     </div>
   )
 }
+
+export default AlertsView

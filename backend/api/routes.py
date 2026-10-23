@@ -108,7 +108,9 @@ def get_overview():
         extended_protocols=st["extended_protocols"],
         rates=st["rates"],
         capture_quality=st["capture_quality"],
-        recent_alerts_count=st["recent_alerts_count"]
+        recent_alerts_count=st["recent_alerts_count"],
+        total_flows=st.get("total_flows"),
+        total_hosts=st.get("total_hosts"),
     )
 
 

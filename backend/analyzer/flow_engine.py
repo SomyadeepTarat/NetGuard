@@ -40,6 +40,22 @@ class FlowRecord:
     dns_queries: List[str] = field(default_factory=list)
     state: str = "ACTIVE"  # ACTIVE, CLOSED, TIMED_OUT
 
+    def is_active(self, current_time: float, active_window: float = 15.0) -> bool:
+        """Determines whether this flow is actively communicating at current_time.
+        
+        Protocol-specific semantics:
+        - TCP: A connection terminated by RST or FIN teardown is marked CLOSED and
+          is not active. An unclosed TCP flow is active if packets were exchanged
+          within active_window.
+        - UDP / ICMP / OTHER: Stateless transports have no explicit teardown flags;
+          they are defined as active strictly if packets were exchanged within active_window.
+        """
+        if self.state == "CLOSED":
+            return False
+        elapsed = current_time - self.last_seen
+        # Allow slight microsecond float/scheduling skew: -1.0s to active_window
+        return -1.0 <= elapsed <= active_window
+
     def to_dict(self) -> dict:
         return {
             "flow_id": self.flow_id,
@@ -83,6 +99,17 @@ class FlowEngine:
         self._recent_events: deque = deque(maxlen=20000)  # (timestamp, size, is_new_flow)
         self._flow_evictions = 0
         self._total_flows_created = 0
+        self._latest_packet_time: Optional[float] = None
+
+    def reset(self) -> None:
+        """Resets engine state to an empty session."""
+        with self._lock:
+            self._lookup.clear()
+            self._flows.clear()
+            self._recent_events.clear()
+            self._flow_evictions = 0
+            self._total_flows_created = 0
+            self._latest_packet_time = None
 
     def _canonical_id(self, p: PacketInfo) -> str:
         s_ip, d_ip = p.source_ip or "-", p.destination_ip or "-"
@@ -103,6 +130,9 @@ class FlowEngine:
         tuple_rev = (d_ip, packet.destination_port, s_ip, packet.source_port, packet.protocol)
 
         with self._lock:
+            if self._latest_packet_time is None or t > self._latest_packet_time:
+                self._latest_packet_time = t
+
             # 1. Check expiration of old lookup tuples
             self._prune_expired_locked(t)
 
@@ -229,7 +259,15 @@ class FlowEngine:
 
     def get_metrics(self, current_time: Optional[float] = None) -> dict:
         with self._lock:
-            now = current_time if current_time is not None else time.time()
+            if current_time is not None:
+                now = current_time
+            elif self._latest_packet_time is not None and abs(time.time() - self._latest_packet_time) > 3600:
+                # If packets use an offline historical timestamp domain (e.g. test fixtures),
+                # anchor evaluation to the latest packet timestamp seen by the engine.
+                now = self._latest_packet_time
+            else:
+                now = time.time()
+
             # Calculate rates over 1s, 5s, 30s
             r1_pkts = r1_bytes = 0
             r5_pkts = r5_bytes = r5_new_flows = 0
@@ -237,6 +275,8 @@ class FlowEngine:
 
             for t, sz, is_new in reversed(self._recent_events):
                 age = now - t
+                if age < 0:
+                    age = 0.0
                 if age <= 1.0:
                     r1_pkts += 1
                     r1_bytes += sz
@@ -251,13 +291,17 @@ class FlowEngine:
                 else:
                     break
 
-            # Active hosts & flows
-            active_threshold = now - 15.0
-            active_flows = [f for f in self._flows.values() if f.last_seen >= active_threshold]
+            # Active hosts & flows based on protocol-appropriate semantics
+            active_flows = [f for f in self._flows.values() if f.is_active(now, active_window=15.0)]
             active_hosts = set()
             for f in active_flows:
                 active_hosts.add(f.client_ip)
                 active_hosts.add(f.server_ip)
+
+            total_hosts = set()
+            for f in self._flows.values():
+                total_hosts.add(f.client_ip)
+                total_hosts.add(f.server_ip)
 
             # Top talkers (bytes)
             host_bytes: Dict[str, int] = {}
@@ -275,6 +319,7 @@ class FlowEngine:
                 "active_flows": len(active_flows),
                 "total_flows": len(self._flows),
                 "active_hosts": len(active_hosts),
+                "total_hosts": len(total_hosts),
                 "flow_evictions": self._flow_evictions,
                 "rates": {
                     "1s": {"packets_per_sec": r1_pkts, "bytes_per_sec": r1_bytes},

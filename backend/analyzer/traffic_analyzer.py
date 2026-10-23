@@ -25,6 +25,17 @@ class TrafficAnalyzer:
     def flow_engine(self) -> FlowEngine:
         return self._flow_engine
 
+    def reset(self) -> None:
+        """Resets analyzer counters and its flow engine for a fresh capture session."""
+        with self._lock:
+            self._started = self._clock()
+            self._recent.clear()
+            self._packets = self._bytes = 0
+            self._protocols = dict.fromkeys(("TCP", "UDP", "ICMP", "OTHER"), 0)
+            self._extended_protocols = {"IPv6": 0, "ICMPv6": 0, "ARP": 0, "DNS": 0, "PARSER_ERRORS": 0}
+        if self._flow_engine:
+            self._flow_engine.reset()
+
     def process(self, packet: PacketInfo):
         with self._lock:
             self._packets += 1
