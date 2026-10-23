@@ -8,6 +8,11 @@ import type {
   ReplayExperiment,
   PcapFileInfo,
   EvaluationData,
+  RobustnessSweepRun,
+  ObservationPlan,
+  LineageVerifyResult,
+  LineageEvent,
+  EvidenceBundle,
 } from './types'
 
 const API_BASE = '/api'
@@ -90,4 +95,40 @@ export const api = {
 
   getEvaluation: () => request<EvaluationData>('/evaluation'),
   getSettings: () => request<any>('/settings'),
+
+  // ============================================================================
+  // Lens / Evidence Resilience Engine (ERE) API
+  // ============================================================================
+  createRobustnessSweep: (params: {
+    pcap_path: string
+    loss_modes?: string[]
+    drop_rates?: number[]
+    seeds?: number[]
+    burst_configs?: Array<[number, number]>
+    drop_ips?: string[]
+    max_runs?: number
+  }) => request<RobustnessSweepRun>('/lens/robustness-runs', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  }),
+
+  listRobustnessSweeps: () => request<RobustnessSweepRun[]>('/lens/robustness-runs'),
+  getRobustnessSweep: (runId: string) => request<RobustnessSweepRun>(`/lens/robustness-runs/${runId}`),
+  cancelRobustnessSweep: (runId: string) =>
+    request<{ status: string; run_id: string }>(`/lens/robustness-runs/${runId}/cancel`, { method: 'POST' }),
+  getRobustnessSweepReport: (runId: string) => request<any>(`/lens/robustness-runs/${runId}/report`),
+
+  getAlertObservationPlan: (alertId: string, runId?: string) => {
+    const q = runId ? `?run_id=${encodeURIComponent(runId)}` : ''
+    return request<ObservationPlan>(`/lens/alerts/${alertId}/observation-plan${q}`)
+  },
+
+  verifyLineage: () => request<LineageVerifyResult>('/lens/lineage/verify'),
+  listLineageEvents: (limit = 50, offset = 0) =>
+    request<{ events: LineageEvent[]; total: number; limit: number; offset: number }>(
+      `/lens/lineage/events?limit=${limit}&offset=${offset}`
+    ),
+  getLineageEvent: (eventId: string) => request<LineageEvent>(`/lens/lineage/${eventId}`),
+  getEvidenceBundle: (runOrEventId: string) =>
+    request<EvidenceBundle>(`/lens/evidence-bundle/${encodeURIComponent(runOrEventId)}`),
 }

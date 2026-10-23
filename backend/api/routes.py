@@ -13,7 +13,14 @@ from backend.api.schemas import (
     ReplayStartRequest,
     OverviewResponse,
     HostGraphResponse,
+    RobustnessSweepRequest,
+    RobustnessRunResponse,
+    ObservationPlanResponse,
+    LineageVerifyResponse,
+    LineageEventItem,
+    EvidenceBundleResponse,
 )
+from backend.services.pcap_resolver import PcapSecurityError
 from backend.api.capture_manager import CaptureManager
 
 router = APIRouter(prefix="/api")
@@ -317,3 +324,172 @@ async def events_sse():
                 await asyncio.sleep(1.0)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# ==============================================================================
+# EVIDENCE RESILIENCE ENGINE (ERE) / LENS API ENDPOINTS
+# ==============================================================================
+
+@router.post("/lens/robustness-runs", response_model=RobustnessRunResponse)
+def create_robustness_sweep(req: RobustnessSweepRequest):
+    mgr = get_manager()
+    try:
+        run = mgr.robustness_sweep.create_sweep_run(
+            pcap_path=req.pcap_path,
+            loss_modes=req.loss_modes,
+            drop_rates=req.drop_rates,
+            seeds=req.seeds,
+            burst_configs=req.burst_configs,
+            drop_ips=req.drop_ips,
+            max_runs=req.max_runs,
+        )
+        try:
+            mgr.lineage_service.record_event(
+                event_type="ROBUSTNESS_SWEEP_QUEUED",
+                manifest_data={
+                    "run_id": run.run_id,
+                    "pcap_name": run.pcap_name,
+                    "pcap_sha256": run.pcap_sha256,
+                    "total_scenarios": run.total_scenarios,
+                    "loss_modes": req.loss_modes,
+                    "drop_rates": req.drop_rates,
+                    "seeds": req.seeds,
+                },
+                parent_id=None,
+                event_id=f"lin-{run.run_id}",
+            )
+        except Exception:
+            pass
+
+        return run.to_dict()
+    except PcapSecurityError as pse:
+        raise HTTPException(status_code=403, detail=str(pse))
+    except (FileNotFoundError, ValueError) as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sweep execution error: {e}")
+
+
+@router.get("/lens/robustness-runs")
+def list_robustness_sweeps():
+    mgr = get_manager()
+    return mgr.robustness_sweep.list_sweep_runs()
+
+
+@router.get("/lens/robustness-runs/{run_id}", response_model=RobustnessRunResponse)
+def get_robustness_sweep(run_id: str):
+    mgr = get_manager()
+    run = mgr.robustness_sweep.get_sweep_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Robustness sweep '{run_id}' not found")
+    return run
+
+
+@router.post("/lens/robustness-runs/{run_id}/cancel")
+def cancel_robustness_sweep(run_id: str):
+    mgr = get_manager()
+    success = mgr.robustness_sweep.cancel_sweep_run(run_id)
+    if not success:
+        raise HTTPException(status_code=400, detail=f"Could not cancel sweep '{run_id}' (not found or already finished)")
+    return {"status": "cancelled", "run_id": run_id}
+
+
+@router.get("/lens/robustness-runs/{run_id}/report")
+def get_robustness_sweep_report(run_id: str):
+    mgr = get_manager()
+    run = mgr.robustness_sweep.get_sweep_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail=f"Robustness sweep '{run_id}' not found")
+    if run.get("status") != "completed":
+        raise HTTPException(status_code=400, detail=f"Sweep '{run_id}' is in state '{run.get('status')}', report not ready")
+
+    report = {
+        "report_version": "netguard-robustness-v1",
+        "generated_at": time.time(),
+        "run_id": run["run_id"],
+        "source_capture": {
+            "pcap_name": run["pcap_name"],
+            "pcap_sha256": run["pcap_sha256"],
+            "pcap_size_bytes": run["pcap_size_bytes"],
+        },
+        "detector_state": {
+            "model_available": mgr.detector.model_available,
+            "model_scope": getattr(mgr.detector, "model_scope", "synthetic-demo" if mgr.detector.model_available else "rule-fallback"),
+            "threshold": mgr.detector.threshold,
+        },
+        "stability_verdict": run["stability_verdict"],
+        "robustness_envelope": run["envelope"],
+        "atlas_matrix": run["atlas_matrix"],
+        "baseline_summary": run["baseline_summary"],
+        "scenarios_evaluated": run["total_scenarios"],
+        "completed_scenarios": run["completed_scenarios"],
+        "scenarios": run["scenario_results"],
+        "disclaimer": "Advisory counterfactual measurement within tested parameter boundaries. Real-world packet loss may exhibit unmodelled temporal or payload correlations."
+    }
+    return report
+
+
+@router.get("/lens/alerts/{alert_id}/observation-plan", response_model=ObservationPlanResponse)
+def get_alert_observation_plan(alert_id: str, run_id: Optional[str] = Query(None)):
+    mgr = get_manager()
+    incident = mgr.repository.get_incident_by_id(alert_id)
+    if not incident:
+        raise HTTPException(status_code=404, detail=f"Alert/Incident '{alert_id}' not found")
+
+    sweep_run_dict = mgr.robustness_sweep.get_sweep_run(run_id) if run_id else None
+
+    plan = mgr.observation_planner.generate_plan(
+        passport=incident,
+        sweep_run=sweep_run_dict
+    )
+
+    try:
+        mgr.lineage_service.record_event(
+            event_type="OBSERVATION_PLAN_GENERATED",
+            manifest_data={
+                "plan_id": plan.plan_id,
+                "target_alert_id": alert_id,
+                "run_id": run_id,
+                "total_recommendations": plan.total_recommendations,
+                "recommendation_ids": [r["recommendation_id"] for r in plan.recommendations],
+            },
+            parent_id=alert_id,
+        )
+    except Exception:
+        pass
+
+    return plan.to_dict()
+
+
+@router.get("/lens/lineage/verify", response_model=LineageVerifyResponse)
+def verify_lineage_chain():
+    mgr = get_manager()
+    return mgr.lineage_service.verify_chain()
+
+
+@router.get("/lens/lineage/events")
+def list_lineage_events(limit: int = Query(50, ge=1, le=500), offset: int = Query(0, ge=0)):
+    mgr = get_manager()
+    events, total = mgr.lineage_service.list_events(limit=limit, offset=offset)
+    return {
+        "events": events,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/lens/lineage/{event_id}", response_model=LineageEventItem)
+def get_lineage_event(event_id: str):
+    mgr = get_manager()
+    event = mgr.lineage_service.get_event(event_id)
+    if not event:
+        raise HTTPException(status_code=404, detail=f"Lineage event '{event_id}' not found")
+    return event
+
+
+@router.get("/lens/evidence-bundle/{run_or_event_id}", response_model=EvidenceBundleResponse)
+def get_evidence_bundle(run_or_event_id: str):
+    mgr = get_manager()
+    bundle = mgr.lineage_service.build_evidence_bundle(run_or_event_id)
+    return bundle
