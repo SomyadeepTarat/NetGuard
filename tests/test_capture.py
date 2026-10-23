@@ -11,7 +11,11 @@ class CaptureTests(unittest.TestCase):
     def test_pcap_capture_pipeline(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'traffic.pcap'
-            wrpcap(str(path), [Ether()/IP()/TCP(), Ether()/IP()/UDP(), Ether()/IP()/ICMP()])
+            wrpcap(str(path), [
+                Ether(src='00:00:00:00:00:01', dst='00:00:00:00:00:02')/IP()/TCP(),
+                Ether(src='00:00:00:00:00:01', dst='00:00:00:00:00:02')/IP()/UDP(),
+                Ether(src='00:00:00:00:00:01', dst='00:00:00:00:00:02')/IP()/ICMP()
+            ])
             analyzer = TrafficAnalyzer()
             capture = PacketCapture(analyzer, pcap=str(path))
             capture.start()

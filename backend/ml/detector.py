@@ -1,49 +1,200 @@
+"""Trustworthy Multi-Path Threat Detection and Evidence Fusion.
+
+Combines:
+1. Explainable rule paths with explicit thresholds, units, and measured values.
+2. Supervised 4-class Random Forest model (uncalibrated score, not attack probability).
+3. Benign baseline anomaly detector for outlier/unknown patterns.
+4. Capture-quality gating (degraded observation marks findings UNCERTAIN, never benign).
+"""
 import json
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 import joblib
 from backend.ml.features import FEATURES, SCHEMA
 from backend.ml.fragility import handshake_fragility
+from backend.ml.anomaly import AnomalyDetector
+
+EXPLAINABLE_RULES = [
+    {
+        "rule_id": "RULE-SCAN-01",
+        "name": "Rapid Destination Port Sweep",
+        "attack_class": "PORT_SCAN",
+        "description": "High unique destination port diversity combined with elevated outbound SYN rate.",
+        "condition": lambda f: f.get("unique_ports", 0) >= 15 and f.get("syn_rate", 0) >= 2,
+        "thresholds": {"unique_ports": ">= 15 ports", "syn_rate": ">= 2.0 pkts/s"},
+        "units": {"unique_ports": "distinct ports", "syn_rate": "packets/sec"},
+    },
+    {
+        "rule_id": "RULE-SYN-01",
+        "name": "High-Rate SYN Incompletion",
+        "attack_class": "SYN_FLOOD",
+        "description": "Sustained high SYN transmission rate with negligible handshake completion ratio.",
+        "condition": lambda f: f.get("syn_rate", 0) >= 30 and f.get("completed_fraction", 0) < 0.1,
+        "thresholds": {"syn_rate": ">= 30.0 pkts/s", "completed_fraction": "< 0.10 (10%)"},
+        "units": {"syn_rate": "packets/sec", "completed_fraction": "ratio (0.0 to 1.0)"},
+    },
+    {
+        "rule_id": "RULE-FLOOD-01",
+        "name": "Volumetric Traffic Surge",
+        "attack_class": "TRAFFIC_FLOOD",
+        "description": "Sustained high byte throughput exceeding the baseline traffic threshold.",
+        "condition": lambda f: f.get("bytes_per_second", 0) >= 80000,
+        "thresholds": {"bytes_per_second": ">= 80,000 bytes/s"},
+        "units": {"bytes_per_second": "bytes/sec"},
+    },
+]
 
 
-def baseline(features):
-    if features['unique_ports'] >= 15 and features['syn_rate'] >= 2:
+def baseline(features: dict) -> str:
+    """Transparent deterministic rule baseline contract."""
+    if features.get('unique_ports', 0) >= 15 and features.get('syn_rate', 0) >= 2:
         return 'PORT_SCAN'
-    if features['syn_rate'] >= 30 and features['completed_fraction'] < .1:
+    if features.get('syn_rate', 0) >= 30 and features.get('completed_fraction', 0) < .1:
         return 'SYN_FLOOD'
-    if features['bytes_per_second'] >= 80000:
+    if features.get('bytes_per_second', 0) >= 80000:
         return 'TRAFFIC_FLOOD'
     return 'BENIGN'
 
 
-class Detector:
-    def __init__(self, model_path, threshold=None):
-        # joblib uses pickle: load only models created locally or from trusted sources.
-        self.bundle = joblib.load(model_path)
-        if self.bundle['schema'] != SCHEMA or self.bundle['features'] != FEATURES:
-            raise ValueError('Model feature schema mismatch; retrain the model')
-        self.threshold = self.bundle['threshold'] if threshold is None else threshold
-        if not 0 <= self.threshold <= 1:
-            raise ValueError('Threshold must be between zero and one')
+def evaluate_rules(features: dict) -> List[dict]:
+    """Returns detailed evaluation for every explainable rule."""
+    results = []
+    for r in EXPLAINABLE_RULES:
+        triggered = bool(r["condition"](features))
+        measured = {}
+        for key in r["thresholds"].keys():
+            measured[key] = round(float(features.get(key, 0.0)), 4)
+        results.append({
+            "rule_id": r["rule_id"],
+            "name": r["name"],
+            "attack_class": r["attack_class"],
+            "description": r["description"],
+            "thresholds": r["thresholds"],
+            "units": r["units"],
+            "measured_values": measured,
+            "triggered": triggered,
+        })
+    return results
 
-    def predict(self, row):
-        model = self.bundle['model']
-        probabilities = model.predict_proba([[row['features'][f] for f in FEATURES]])[0]
-        index = probabilities.argmax()
-        label, score = str(model.classes_[index]), float(probabilities[index])
-        rule = baseline(row['features'])
-        decision = 'BENIGN' if label == 'BENIGN' else ('SUSPECTED' if score >= self.threshold else 'UNCERTAIN')
-        if row['quality']['state_evictions'] or row['quality']['late_packets']:
-            decision = 'UNCERTAIN' if label != 'BENIGN' else 'BENIGN'
-        fragility = (handshake_fragility(model, row, self.threshold)
-                     if label == 'SYN_FLOOD' and score >= self.threshold else
-                     {'status': 'not_applicable', 'advisory_only': True,
-                      'reason': 'Requires a SYN_FLOOD prediction above the score threshold'})
-        return {**row, 'prediction': label, 'score': score, 'decision': decision,
-                'fragility': fragility,
-                'baseline': rule, 'corroborated': rule == label and label != 'BENIGN',
-                'model_scope': self.bundle['scope'],
-                'evidence': {k: round(row['features'][k], 4) for k in
-                             ('syn_rate', 'unique_ports', 'completed_fraction', 'bytes_per_second', 'response_fraction')}}
+
+class Detector:
+    def __init__(self, model_path: Optional[str] = None, threshold: Optional[float] = None, anomaly_detector: Optional[AnomalyDetector] = None):
+        self.bundle = None
+        self.threshold = 0.8
+        self.model_available = False
+        self.anomaly_detector = anomaly_detector or AnomalyDetector()
+
+        if model_path is not None:
+            p = Path(model_path)
+            if p.exists():
+                self.bundle = joblib.load(p)
+                if self.bundle.get('schema') != SCHEMA or self.bundle.get('features') != FEATURES:
+                    raise ValueError('Model feature schema mismatch; retrain the model')
+                self.threshold = self.bundle['threshold'] if threshold is None else threshold
+                if not 0 <= self.threshold <= 1:
+                    raise ValueError('Threshold must be between zero and one')
+                self.model_available = True
+            else:
+                self.model_available = False
+
+    def predict(self, row: dict) -> dict:
+        features = row['features']
+        rule_class = baseline(features)
+        detailed_rules = evaluate_rules(features)
+        triggered_rules = [r for r in detailed_rules if r["triggered"]]
+
+        model_class = "BENIGN"
+        score = 0.0
+        model_scope = "model_unavailable"
+        fragility = {
+            'status': 'not_applicable',
+            'advisory_only': True,
+            'reason': 'Model unavailable or requires a SYN_FLOOD prediction above score threshold'
+        }
+
+        model_available = getattr(self, 'model_available', False) or (getattr(self, 'bundle', None) is not None and 'model' in getattr(self, 'bundle', {}))
+        anomaly_detector = getattr(self, 'anomaly_detector', None)
+
+        if model_available and getattr(self, 'bundle', None):
+            model = self.bundle['model']
+            probabilities = model.predict_proba([[features[f] for f in FEATURES]])[0]
+            index = probabilities.argmax()
+            model_class, score = str(model.classes_[index]), float(probabilities[index])
+            model_scope = self.bundle.get('scope', 'local-artifact')
+
+            if model_class == 'SYN_FLOOD' and score >= self.threshold:
+                fragility = handshake_fragility(model, row, self.threshold)
+
+        # Baseline anomaly detector scoring
+        if anomaly_detector is not None:
+            anomaly_result = anomaly_detector.score(features)
+            if model_class == 'BENIGN' and rule_class == 'BENIGN':
+                anomaly_detector.feed_baseline_sample(features)
+            else:
+                anomaly_detector.freeze_baseline(True)
+        else:
+            anomaly_result = {
+                "status": "UNAVAILABLE", "is_anomalous": False,
+                "anomaly_score": None, "label": "DETECTOR_DISABLED",
+                "note": "Anomaly detector not attached."
+            }
+
+        # Primary decision determination
+        if model_available:
+            decision = 'BENIGN' if model_class == 'BENIGN' else ('SUSPECTED' if score >= self.threshold else 'UNCERTAIN')
+        else:
+            # Fallback to rule path if model unavailable
+            decision = 'BENIGN' if rule_class == 'BENIGN' else 'SUSPECTED'
+
+        # Capture quality degradation safeguard
+        quality = row.get('quality', {})
+        if quality.get('state_evictions') or quality.get('late_packets') or quality.get('queue_drops'):
+            if decision == 'SUSPECTED':
+                decision = 'UNCERTAIN'
+
+        # Evidence fusion & corroboration
+        corroborated = (rule_class == model_class and model_class != 'BENIGN')
+        if not model_available:
+            corroborated = (rule_class != 'BENIGN')
+
+        agreement_status = "AGREED_BENIGN"
+        if model_class != "BENIGN" and rule_class != "BENIGN":
+            agreement_status = "FULL_AGREEMENT" if model_class == rule_class else "CLASS_DISCREPANCY"
+        elif model_class != "BENIGN" and rule_class == "BENIGN":
+            agreement_status = "MODEL_ONLY"
+        elif model_class == "BENIGN" and rule_class != "BENIGN":
+            agreement_status = "RULE_ONLY"
+
+        fusion = {
+            "model_prediction": model_class if model_available else "UNAVAILABLE",
+            "model_score": round(score, 4) if model_available else None,
+            "is_calibrated": False,
+            "rule_prediction": rule_class,
+            "triggered_rules": [r["rule_id"] for r in triggered_rules],
+            "anomaly_status": anomaly_result["label"],
+            "agreement_status": agreement_status,
+            "evidence_quality": "DEGRADED" if (quality.get('state_evictions') or quality.get('late_packets') or quality.get('queue_drops')) else "HEALTHY",
+        }
+
+        return {
+            **row,
+            'prediction': model_class if model_available else rule_class,
+            'score': score,
+            'decision': decision,
+            'fragility': fragility,
+            'baseline': rule_class,
+            'corroborated': corroborated,
+            'model_scope': model_scope,
+            'model_available': model_available,
+            'detailed_rules': detailed_rules,
+            'anomaly': anomaly_result,
+            'fusion': fusion,
+            'evidence': {
+                k: round(features[k], 4)
+                for k in ('syn_rate', 'unique_ports', 'completed_fraction', 'bytes_per_second', 'response_fraction')
+                if k in features
+            }
+        }
 
 
 class JsonOutput:
