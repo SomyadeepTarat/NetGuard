@@ -1,79 +1,118 @@
-# NetGuard Research Methodology & Evaluation Framework
+# NetGuard Evidence Resilience Engine (ERE) — Research Methodology & Evaluation Framework
 
-## 1. Research Question & Objective
+## 1. Executive Summary & Research Question
 
-Network intrusion detection systems (NIDS) are routinely evaluated under the implicit assumption of **lossless, perfect packet capture**. In real-world enterprise deployments, network monitors suffer from driver ring-buffer drops, kernel-to-user-space queue overflows, out-of-order delivery, asymmetric routing, and CPU throttling.
+Network intrusion detection systems (NIDS) are overwhelmingly evaluated under an artificial assumption of **lossless, perfect packet capture**. In real-world enterprise deployments, network monitors routinely suffer from driver ring-buffer drops, kernel queue overflows, late/out-of-order packets, asymmetric routing, and CPU throttling.
 
-NetGuard addresses the following core research question:
-> **Research Question:** *How sensitive are network threat classifications and rule-based heuristic detections to observation-level packet loss, and can counterfactual offline replay provide actionable evidence-quality verification without rewriting or suppressing original alert records?*
+Recent surveys confirm this critical blind spot: *A survey on network traffic analysis with incomplete data* (Computer Communications, 2026) reports that among 55 recent studies on network traffic analysis, **only 10 explicitly considered the effect of data incompleteness**.
 
-Rather than claiming global novelty or guaranteed zero-day defense, NetGuard introduces **Capture-Aware Incident Verification**: an advisory pipeline that pairs suspicious-traffic alerts with inspectable evidence, measures capture telemetry quality, and subjects the underlying capture to controlled, deterministic perturbation profiles (random loss, burst loss, directional loss) to evaluate decision stability.
+NetGuard operationalizes the following research question:
+> **Core Research Question:** *For a fixed observed capture and fixed detector configuration, how does the incident decision vary across reproducible families and severities of observation impairment; which specific evidence gaps are associated with instability; and what additional passive observations should an analyst prioritize next? Can each result be independently reproduced from a manifest and verified evidence lineage?*
 
----
-
-## 2. Experimental Design & Data Provenance
-
-### 2.1 Dataset Layers
-
-1. **Deterministic Local Synthetic PCAPs (`artifacts/demo/`):**
-   - Generated entirely offline via Scapy packet construction without network transmission.
-   - Fixed random seeds ensure 100% reproducible frame sequencing, IP addresses, port distributions, and payload lengths.
-   - Used for unit testing, continuous integration, and professor demonstrations without external dependencies or privileged network adapters.
-   - Visibly tagged with scope: `synthetic-demo`.
-
-2. **External Benchmark Adapter (CIC-IDS2017 / Custom Captures):**
-   - Structured JSON manifest mapping capture sessions to target splits (`train`, `validation`, `test`) and classes.
-   - Supports evaluating held-out sessions from public benchmarks without requiring multi-gigabyte downloads for basic operation.
-   - Manual placement instructions ensure compliance with data governance and licensing terms.
+NetGuard does not claim that counterfactual reasoning, packet loss testing, or hash chains are unprecedented in isolation. Rather, NetGuard’s specific, defensible contribution is the **Evidence Resilience Engine (ERE)**: the unified integration of per-incident robustness to multi-dimensional observation failures, evidence-gap-driven passive triage planning, and tamper-evident cryptographic lineage in a streaming observatory.
 
 ---
 
-## 3. Strict Methodological Safeguards
+## 2. Related-Work Positioning & Comparison Table
 
-To prevent subtle methodological flaws common in NIDS literature, NetGuard implements the following safeguards:
+To maintain rigorous scientific honesty, NetGuard explicitly positions itself relative to recent foundational literature:
 
-### 3.1 Session-Separated Splitting
-- **Zero Cross-Split Contamination:** Dataset manifests enforce that each session/capture file exists in **exactly one split** (`train`, `validation`, or `test`).
-- **No Temporal / Rolling-Window Leakage:** Models are never evaluated on overlapping time windows extracted from training captures.
-- **No Device / IP Identity Overfitting:** The feature extractor operates on statistical behavioral aggregates (packet rates, byte rates, SYN/FIN ratios, port entropy) rather than memorizing specific IP addresses or MAC headers.
-
-### 3.2 Uncalibrated Score Disclosure
-- Random Forest output values are explicitly treated as **uncalibrated scores**, not true posterior probabilities of malicious intent.
-- Decision thresholds are selected exclusively on the `validation` split to maximize attack F1 while strictly penalizing false positives on benign sessions.
-
-### 3.3 Anomaly Detector Baseline Integrity
-- The Isolation Forest anomaly detector requires a minimum warm-up window threshold (default: 20 windows) before reporting anomaly scores.
-- During suspected threat intervals or degraded capture periods, baseline profile updating is **frozen** to prevent adversarial baseline poisoning.
+| Prior Approach / Source | What It Already Covers | What NetGuard Adds Operationally | Operational Limitations |
+|---|---|---|---|
+| **Survey on Network Traffic Analysis with Incomplete Data** (*Computer Communications*, 2026) | Establishes that packet loss severely degrades ML traffic classifiers; identifies research gap across 55 papers. | Implements a real-time, per-incident multi-scenario perturbation matrix (Random, Burst, Directional) directly in an operational network observatory. | Evaluates bounded parameter grids (rates $\le 50\%$, burst sizes $\le 8$); does not simulate arbitrary physical-layer signal jamming. |
+| **CANDICE** (*Future Generation Computer Systems*, 2026) | Explores counterfactual explanations and feature perturbation for explainable NIDS. | Measures realization-level packet omission rather than arbitrary feature-space perturbation; enforces source PCAP and original incident non-mutation. | Advisory only; counterfactual simulation does not prove the true causal packet distribution of the live network. |
+| **Forensic-Ready Intrusion Detection** (*MethodsX*, June 2026) | Demonstrates graph-based host modeling, explainable detection, and reproducible forensic artifacts. | Adds RFC 8785 canonical manifest serialization, append-only SQLite SHA-256 hash chains, and one-click evidence bundle export linking sweep to alert. | Tamper-evident within application bounds; does not protect against a hostile system administrator overwriting the host OS disk. |
+| **Reliability Auditing of ML-IDS Explanations** (2026) | Proves that ML explanations often suffer from instability, explanation disagreement, and sensitivity to spurious features. | Directly couples measured decision-shift boundaries with a rule-based passive observation planner recommending concrete operator verification steps. | Recommendations are heuristic triage suggestions; they do not replace human analyst investigation or formal threat intelligence. |
+| **PAVE Framework** (*IoT Network Security*, 2026) | Emphasizes protocol-validity-aware perturbation over synthetic feature vector jitter. | Perturbations are executed on raw packet streams through the canonical `parse_packet` and bounded flow engine, maintaining protocol validity across runs. | Simulation is constrained to metadata-level parsing; payloads are neither inspected nor altered. |
 
 ---
 
-## 4. Evaluation Metrics & Formulation
+## 3. The Evidence Resilience Engine (ERE) Architecture
 
-NetGuard reports empirical, measured performance metrics across the following dimensions:
+The ERE consists of three tightly coupled, mutually reinforcing components:
 
-| Metric | Definition & Purpose |
-|---|---|
-| **Per-Class Precision, Recall, F1** | Evaluates per-attack classification capability on held-out test sessions. |
-| **Macro-F1 Score** | Balanced unweighted average across all classes (`BENIGN`, `PORT_SCAN`, `SYN_FLOOD`, `TRAFFIC_FLOOD`). |
-| **Confusion Matrix** | Full contingency matrix showing misclassifications between specific attack families and benign traffic. |
-| **False Alerts per Benign Hour** | Normalized rate of false alarms per hour of active benign observation: $\text{FAPh} = \frac{\text{False Alerts} \times 3600}{\text{Benign Observation Seconds}}$. Alerts are suppressed within a 10s cooldown per source/class to reflect realistic SOC operational impact. |
-| **Attack-Onset Detection Delay** | Measured in elapsed seconds from capture onset to the first true positive alert on held-out attack sessions. |
-| **Throughput (windows/sec)** | End-to-end processing throughput for feature extraction, baseline heuristics, and model inference. |
+```
+[ Observed Network Traffic ]
+            │
+            ▼
+[ Incident Detection & Quality Telemetry ] ──► [ Evidence Passport Saved ] (Immutable)
+            │                                             │
+            ├─────────────────────────────────────────────┤
+            ▼                                             ▼
+[ Observation Robustness Atlas ]             [ Tamper-Evident Lineage ]
+- Multi-scenario failure matrix              - Canonical RFC 8785 JSON
+- Realized packet accounting                 - SHA-256 Block Hashing
+- Isolated detector cloning                  - Genesis Block Linkage
+- Canonical window alignment                 - Verifier: VALID / INVALID
+            │                                             │
+            └──────────────────────┬──────────────────────┘
+                                   │
+                                   ▼
+                   [ Passive Next-Observation Planner ]
+                   - Deterministic evidence-gap rules
+                   - Zero active network probes (Passive only)
+                   - Ranked follow-up triage recommendations
+                                   │
+                                   ▼
+                   [ Reproducible Evidence Bundle ]
+```
 
 ---
 
-## 5. Counterfactual Perturbation Profiles
+## 4. Component Deep-Dive
 
-The signature feature of the NetGuard Replay Lab is offline re-processing of an identical capture through the canonical parser, flow engine, and ML pipeline under controlled perturbation:
+### 4.1 Pillar A: Observation Robustness Atlas
 
-1. **Random Packet Loss:** Independent Bernoulli trials where each packet is omitted with probability $p \in [0.05, 0.50]$ under a deterministic RNG seed.
-2. **Burst Packet Loss:** Clustered packet omission simulating kernel buffer overflows, dropping contiguous runs of $k$ packets every $m$ packets.
-3. **Directional Loss:** Asymmetric visibility omission dropping traffic in either forward or reverse direction, simulating asymmetric routing or tap failure.
+Rather than testing an arbitrary single loss rate and single random seed, the Atlas executes a bounded, reproducible matrix of observation-failure scenarios:
 
-### Stability Verdicts
-- **STABLE:** The classification and threat confidence remain resilient under the chosen perturbation rate.
-- **SENSITIVE:** The decision flips (e.g., from `SYN_FLOOD` to `BENIGN` or `UNCERTAIN`), indicating that the original finding relies on fragile handshake evidence. Corroborating telemetry is recommended.
-- **INCONCLUSIVE:** The input session contained no threat windows under baseline conditions.
+1. **Failure Dimensions**:
+   - **Baseline:** Direct re-processing with zero simulated loss.
+   - **Random Loss:** Pseudo-random packet omission across an explicit seed ensemble (e.g. 11, 23, 37, 51, 79) and rates (5%, 10%, 20%, 30%, 50%).
+   - **Burst Loss:** Contiguous omission clusters simulating kernel buffer overflow, configured by burst size ($k$) and interval ($m$).
+   - **Directional Visibility Loss:** Asymmetric visibility omission conditioned on source/destination endpoints, testing resilience to unidirectional tap placement or asymmetric routing.
 
-### The Non-Mutation Guarantee
-Counterfactual perturbation is **strictly advisory**. A sensitivity verdict never modifies, deletes, suppresses, or downgrades the original alert record in the SQLite Evidence Passport repository.
+2. **Accurate Packet Accounting**:
+   The engine strictly distinguishes configured parameters from realized effects, recording:
+   - $N_{\text{source}}$: Total packets eligible for the experiment.
+   - $N_{\text{omitted}}$: Packets dropped by simulation.
+   - $N_{\text{retained}}$: Packets retained and fed to parser.
+   - $R_{\text{realized}} = N_{\text{omitted}} / N_{\text{source}}$: Realized omission fraction.
+
+3. **Canonical Window Alignment**:
+   Baseline and perturbed windows are aligned using explicit `(source_ip, timestamp)` keys, rejecting naive `zip()` list pairing. The engine reports matched windows, baseline-only windows, perturbed-only windows, and window coverage percentage.
+
+4. **Detector State Isolation**:
+   To prevent anomaly baseline contamination across runs, each scenario clones a fresh, isolated `AnomalyDetector` while reusing the frozen fitted model artifact.
+
+5. **Stability Verdict Semantics**:
+   - `STABLE`: No decision shifts or alert drops observed across all eligible executed scenarios. Strictly labeled "Stable within tested parameter space".
+   - `SENSITIVE`: One or more scenarios flip classification or decision. The exact lowest tested boundary (`lowest_boundary`) is identified.
+   - `INCONCLUSIVE`: Insufficient baseline threat windows or low window coverage to establish a bounded verdict.
+
+### 4.2 Pillar B: Passive Next-Observation Planner
+
+The planner is a deterministic, explainable rule engine converting evidence gaps into prioritized operator checks:
+
+- **Mandatory Invariant:** `active_network_action: false`. The system never sends packets, port probes, injection frames, or automatic firewall blocks.
+- **Traceability:** Every recommendation cites the specific rule ID (`OBS-CAP-01`, `OBS-DIR-01`, `OBS-SWEEP-01`, `OBS-RES-01`, `OBS-TIME-01`, `OBS-SYN-01`, `OBS-CORR-01`) and the exact triggering telemetry fields.
+- **Disclosures:** Each action item details prerequisites, operational effort (`LOW`, `MEDIUM`, `HIGH`), and privacy implications (`NONE`, `LOW`, `MEDIUM`).
+
+### 4.3 Pillar C: Tamper-Evident Evidence Lineage
+
+Maintains a cryptographic chain of custody for all analytical events:
+
+- **RFC 8785 Canonical JSON Serialization:** Enforces sorted dictionary keys and compact separators (`separators=(',', ':')`) for deterministic SHA-256 digest computation.
+- **Continuous Hash Chain:** Persisted in an append-only SQLite table (`lineage_events`). Each block hash is computed as:
+  $$H_i = \text{SHA-256}\left(\text{seq}_i \,\|\, \text{event\_id}_i \,\|\, \text{event\_type}_i \,\|\, \text{manifest\_digest}_i \,\|\, H_{i-1}\right)$$
+  where Genesis block $H_0 = 0^{64}$.
+- **Chain Verifier:** Independently recomputes all hashes from genesis to head, returning `VALID`, `INVALID` (identifying the first failing sequence ID), or `EMPTY`.
+- **Reproducible Evidence Bundle:** An exportable JSON package uniting the Evidence Passport snapshot, sweep matrix, planner recommendations, and lineage verification status.
+
+---
+
+## 5. Security & Threat Boundary Disclosures
+
+1. **Passive Observation Only:** NetGuard is read-only and passive. It transmits zero network packets.
+2. **Local Tamper Evidence:** SHA-256 hash chains detect accidental or unauthorized row modifications within the local database. They do not constitute asymmetric cryptographic digital signatures or protection against hostile administrators with root filesystem access.
+3. **Synthetic Replay Bounds:** Perturbations evaluate detector sensitivity under modeled packet omission. They do not guarantee performance against physical jamming or unseen zero-day attacks.
+4. **Metadata Privacy:** Evidence Passports, lineage manifests, and exported bundles contain behavioral network metadata only. Raw payload bytes are discarded during packet ingestion.

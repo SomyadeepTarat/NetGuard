@@ -20,6 +20,9 @@ from backend.ml.anomaly import AnomalyDetector
 from backend.services.capture_quality import CaptureQualityService
 from backend.storage.repository import IncidentRepository
 from backend.services.replay_lab import ReplayLabService
+from backend.ml.robustness_sweep import RobustnessSweepEngine
+from backend.services.observation_planner import PassiveNextObservationPlanner
+from backend.storage.evidence_lineage import EvidenceLineageService
 
 
 class CaptureManager:
@@ -48,6 +51,9 @@ class CaptureManager:
             anomaly_detector=self.anomaly_detector
         )
         self.replay_lab = ReplayLabService(detector=self.detector, artifacts_dir=artifacts_dir)
+        self.robustness_sweep = RobustnessSweepEngine(detector=self.detector, artifacts_dir=artifacts_dir)
+        self.lineage_service = EvidenceLineageService(db_path=db_path)
+        self.observation_planner = PassiveNextObservationPlanner()
 
         # State & locks
         self._lock = threading.Lock()
@@ -346,4 +352,20 @@ class CaptureManager:
                             "fragility": pred.get("fragility", {}),
                             "provenance": self._interface_name
                         }
-                        self.repository.save_incident(incident)
+                        incident_id = self.repository.save_incident(incident)
+                        try:
+                            self.lineage_service.record_event(
+                                event_type="INCIDENT_RECORDED",
+                                manifest_data={
+                                    "alert_id": incident_id,
+                                    "detector_class": incident.get("detector_class"),
+                                    "decision": incident.get("decision"),
+                                    "source_ip": incident.get("source_ip"),
+                                    "destination_ip": incident.get("destination_ip"),
+                                    "score": incident.get("detector_score"),
+                                    "quality_status": q_report.get("overall_status"),
+                                },
+                                parent_id=None,
+                            )
+                        except Exception:
+                            pass

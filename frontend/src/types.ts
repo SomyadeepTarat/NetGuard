@@ -258,3 +258,172 @@ export interface EvaluationData {
   }>
   disclaimer?: string
 }
+
+// ==============================================================================
+// Evidence Resilience Engine (ERE) / Lens Types
+// ==============================================================================
+
+export interface ScenarioResultItem {
+  scenario_id: string
+  loss_mode: 'random' | 'burst' | 'directional'
+  nominal_drop_rate: number
+  seed: number
+  burst_size: number
+  burst_interval: number
+  drop_ip?: string | null
+  source_packets: number
+  eligible_packets: number
+  omitted_packets: number
+  retained_packets: number
+  realized_omission_rate: number
+  eligible_omission_rate: number
+  total_windows: number
+  matched_windows: number
+  baseline_only_windows: number
+  perturbed_only_windows: number
+  window_alignment_coverage: number
+  baseline_suspicious_count: number
+  perturbed_suspicious_count: number
+  decision_shifts: number
+  alert_retention_rate: number
+  class_retention_rate: number
+  mean_feature_shifts: Record<string, {
+    baseline: number
+    perturbed: number
+    difference: number
+    percentage_change: number | null
+  }>
+  duration_seconds: number
+  status: 'completed' | 'cancelled' | 'failed'
+  error?: string | null
+}
+
+export interface AtlasMatrixCell {
+  loss_mode: string
+  nominal_rate: string
+  runs_count: number
+  avg_alert_retention: number
+  avg_realized_omission: number
+  total_decision_shifts: number
+  is_stable: boolean
+}
+
+export interface AtlasMatrix {
+  modes: string[]
+  cells: AtlasMatrixCell[]
+}
+
+export interface LowestBoundary {
+  scenario_id: string
+  loss_mode: string
+  nominal_drop_rate: number
+  realized_omission_rate: number
+  seed: number
+  first_affected_window?: string | null
+  decision_shifts: number
+}
+
+export interface RobustnessEnvelope {
+  tested_scenarios_count: number
+  baseline_threat_windows: number
+  mean_alert_retention_rate: number
+  mean_class_retention_rate: number
+  total_decision_shifts_across_all_runs: number
+  mean_realized_omission_rate: number
+  lowest_tested_boundary?: LowestBoundary | null
+  tested_loss_modes: string[]
+  tested_drop_rates: number[]
+  tested_seeds: number[]
+  verdict_scope: string
+}
+
+export interface RobustnessSweepRun {
+  run_id: string
+  pcap_name: string
+  pcap_sha256: string
+  pcap_size_bytes: number
+  status: 'queued' | 'running' | 'completed' | 'cancelled' | 'failed'
+  created_at: number
+  completed_at?: number | null
+  total_scenarios: number
+  completed_scenarios: number
+  current_scenario_id?: string | null
+  baseline_summary: {
+    total_windows?: number
+    predictions?: Record<string, number>
+    mean_features?: Record<string, number>
+  }
+  scenario_results: ScenarioResultItem[]
+  atlas_matrix: AtlasMatrix
+  envelope: RobustnessEnvelope
+  stability_verdict: 'STABLE' | 'SENSITIVE' | 'INCONCLUSIVE' | 'PENDING'
+  error?: string | null
+}
+
+export interface PassiveRecommendation {
+  recommendation_id: string
+  title: string
+  priority: 'HIGH' | 'MEDIUM' | 'LOW'
+  score: number
+  trigger_evidence: string
+  justifying_scenario?: string | null
+  what_to_observe_next: string
+  expected_clarification: string
+  prerequisites: string
+  expected_effort: 'LOW' | 'MEDIUM' | 'HIGH'
+  privacy_impact: 'NONE' | 'LOW' | 'MEDIUM'
+  rule_id: string
+  active_network_action: boolean
+}
+
+export interface ObservationPlan {
+  plan_id: string
+  target_alert_id?: string | null
+  status: 'READY' | 'INSUFFICIENT_EVIDENCE' | 'NO_GAPS_IDENTIFIED'
+  total_recommendations: number
+  recommendations: PassiveRecommendation[]
+  evidence_summary: Record<string, any>
+  active_network_action: boolean
+  disclaimer: string
+}
+
+export interface LineageVerifyResult {
+  status: 'VALID' | 'INVALID' | 'EMPTY'
+  is_valid: boolean
+  events_count: number
+  head_hash?: string | null
+  failing_sequence_id?: number | null
+  failing_event_id?: string | null
+  error_reason?: string | null
+  expected_previous_hash?: string | null
+  actual_previous_hash?: string | null
+  message?: string | null
+}
+
+export interface LineageEvent {
+  sequence_id: number
+  event_id: string
+  event_type: string
+  parent_id?: string | null
+  timestamp: number
+  iso_time: string
+  manifest_digest: string
+  previous_hash: string
+  event_hash: string
+  manifest: Record<string, any>
+}
+
+export interface EvidenceBundle {
+  bundle_version: string
+  generated_at: number
+  target_identifier: string
+  target_event?: LineageEvent | null
+  lineage_verification: LineageVerifyResult
+  reproducibility_contract: {
+    features: string[]
+    schema: string
+    canonical_serialization: string
+    verification_hash_algorithm: string
+  }
+  security_disclaimer: string
+}

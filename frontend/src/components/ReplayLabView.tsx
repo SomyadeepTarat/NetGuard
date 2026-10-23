@@ -9,13 +9,20 @@ import {
   AlertTriangle,
   RefreshCw,
   Sliders,
-  ShieldCheck
+  ShieldCheck,
+  Compass,
+  Eye,
+  Link2
 } from 'lucide-react'
 import type { PcapFileInfo, ReplayExperiment } from '../types'
 import { api } from '../api'
 import { PageHeader } from './PageHeader'
+import { RobustnessAtlasTab } from './RobustnessAtlasTab'
+import { NextObservationTab } from './NextObservationTab'
+import { EvidenceLineageTab } from './EvidenceLineageTab'
 
 export const ReplayLabView: React.FC = () => {
+  const [activeSubView, setActiveSubView] = useState<'single' | 'atlas' | 'planner' | 'lineage'>('single')
   const [pcaps, setPcaps] = useState<PcapFileInfo[]>([])
   const [selectedPcap, setSelectedPcap] = useState('')
   const [lossMode, setLossMode] = useState<'random' | 'burst' | 'directional'>('random')
@@ -132,23 +139,119 @@ export const ReplayLabView: React.FC = () => {
         }
       />
 
-      {/* Prominent Scientific Honesty Banner */}
-      <div className="callout callout-advisory" style={{ marginTop: 0, marginBottom: '20px' }}>
-        <Info size={18} style={{ flexShrink: 0 }} />
-        <div>
-          <strong>OFFLINE SIMULATION — NO PACKETS TRANSMITTED.</strong> Counterfactual observation-loss sensitivity tests whether a detection finding remains stable when the same capture is reprocessed under hypothetical packet loss. Simulated loss does not establish actual live packet loss or causality.
-        </div>
+      {/* Evidence Resilience Studio Sub-Navigation */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        borderBottom: '1px solid var(--color-border)',
+        paddingBottom: '14px',
+        marginBottom: '20px'
+      }}>
+        <button
+          type="button"
+          onClick={() => setActiveSubView('single')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '12.5px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            border: activeSubView === 'single' ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+            background: activeSubView === 'single' ? 'var(--color-accent)' : 'var(--color-surface)',
+            color: activeSubView === 'single' ? '#ffffff' : 'var(--color-text-secondary)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <FlaskConical size={14} /> Single Replay
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubView('atlas')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '12.5px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            border: activeSubView === 'atlas' ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+            background: activeSubView === 'atlas' ? 'var(--color-accent)' : 'var(--color-surface)',
+            color: activeSubView === 'atlas' ? '#ffffff' : 'var(--color-text-secondary)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Compass size={14} /> Robustness Atlas
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubView('planner')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '12.5px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            border: activeSubView === 'planner' ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+            background: activeSubView === 'planner' ? 'var(--color-accent)' : 'var(--color-surface)',
+            color: activeSubView === 'planner' ? '#ffffff' : 'var(--color-text-secondary)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Eye size={14} /> Next Observation
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubView('lineage')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '7px 14px',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '12.5px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            border: activeSubView === 'lineage' ? '1px solid var(--color-accent)' : '1px solid var(--color-border)',
+            background: activeSubView === 'lineage' ? 'var(--color-accent)' : 'var(--color-surface)',
+            color: activeSubView === 'lineage' ? '#ffffff' : 'var(--color-text-secondary)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Link2 size={14} /> Evidence Lineage
+        </button>
       </div>
 
-      {/* Two-Column Lab Workspace */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'minmax(320px, 390px) minmax(0, 1fr)',
-          gap: '22px',
-          alignItems: 'start',
-        }}
-      >
+      {activeSubView === 'single' && (
+        <>
+          {/* Prominent Scientific Honesty Banner */}
+          <div className="callout callout-advisory" style={{ marginTop: 0, marginBottom: '20px' }}>
+            <Info size={18} style={{ flexShrink: 0 }} />
+            <div>
+              <strong>OFFLINE SIMULATION — NO PACKETS TRANSMITTED.</strong> Counterfactual observation-loss sensitivity tests whether a detection finding remains stable when the same capture is reprocessed under hypothetical packet loss. Simulated loss does not establish actual live packet loss or causality.
+            </div>
+          </div>
+
+          {/* Two-Column Lab Workspace */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(320px, 390px) minmax(0, 1fr)',
+              gap: '22px',
+              alignItems: 'start',
+            }}
+          >
         {/* Left Column: Experiment Setup & History */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           {/* Setup Card */}
@@ -651,6 +754,26 @@ export const ReplayLabView: React.FC = () => {
           </div>
         </div>
       </div>
+      </>
+      )}
+
+      {activeSubView === 'atlas' && (
+        <RobustnessAtlasTab
+          pcaps={pcaps}
+          selectedPcap={selectedPcap}
+          onSelectPcap={setSelectedPcap}
+        />
+      )}
+
+      {activeSubView === 'planner' && (
+        <NextObservationTab
+          sweeps={[]}
+        />
+      )}
+
+      {activeSubView === 'lineage' && (
+        <EvidenceLineageTab />
+      )}
     </div>
   )
 }

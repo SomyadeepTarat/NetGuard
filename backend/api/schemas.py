@@ -104,3 +104,79 @@ class HostGraphResponse(BaseModel):
     edges: List[HostGraphEdge]
     disclaimer: str
     top_talkers: List[Dict[str, Any]]
+
+
+class RobustnessSweepRequest(BaseModel):
+    pcap_path: str
+    loss_modes: Optional[List[str]] = Field(default_factory=lambda: ["random", "burst", "directional"])
+    drop_rates: Optional[List[float]] = Field(default_factory=lambda: [0.05, 0.10, 0.20, 0.30, 0.50])
+    seeds: Optional[List[int]] = Field(default_factory=lambda: [11, 23, 37, 51, 79])
+    burst_configs: Optional[List[List[int]]] = None
+    drop_ips: Optional[List[str]] = None
+    max_runs: int = Field(default=50, ge=1, le=100)
+
+
+class RobustnessRunResponse(BaseModel):
+    run_id: str
+    pcap_name: str
+    pcap_sha256: str
+    pcap_size_bytes: int
+    status: str
+    created_at: float
+    completed_at: Optional[float] = None
+    total_scenarios: int
+    completed_scenarios: int
+    current_scenario_id: Optional[str] = None
+    stability_verdict: str
+    baseline_summary: Dict[str, Any] = Field(default_factory=dict)
+    scenario_results: List[Dict[str, Any]] = Field(default_factory=list)
+    atlas_matrix: Dict[str, Any] = Field(default_factory=dict)
+    envelope: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+    disclaimer: str
+
+
+class ObservationPlanResponse(BaseModel):
+    plan_id: str
+    target_alert_id: Optional[str] = None
+    status: str
+    total_recommendations: int
+    recommendations: List[Dict[str, Any]]
+    evidence_summary: Dict[str, Any]
+    active_network_action: bool = False
+    disclaimer: str
+
+
+class LineageVerifyResponse(BaseModel):
+    status: str
+    is_valid: bool
+    events_count: int
+    head_hash: Optional[str] = None
+    failing_sequence_id: Optional[int] = None
+    failing_event_id: Optional[str] = None
+    error_reason: Optional[str] = None
+    message: Optional[str] = None
+
+
+class LineageEventItem(BaseModel):
+    sequence_id: int
+    event_id: str
+    event_type: str
+    parent_id: Optional[str] = None
+    timestamp: float
+    iso_time: str
+    manifest_digest: str
+    previous_hash: str
+    event_hash: str
+    manifest: Dict[str, Any] = Field(default_factory=dict)
+
+
+class EvidenceBundleResponse(BaseModel):
+    bundle_version: str
+    generated_at: float
+    target_identifier: str
+    target_event: Optional[Dict[str, Any]] = None
+    lineage_verification: Dict[str, Any]
+    reproducibility_contract: Dict[str, Any]
+    security_disclaimer: str
+
