@@ -40,6 +40,20 @@ class ReplayStartRequest(BaseModel):
 
 
 class OverviewResponse(BaseModel):
+    """Authoritative snapshot of session metrics and telemetry.
+    
+    Metric Semantics:
+    - total_packets: Cumulative frames ingested in the current capture session.
+    - total_bytes: Cumulative wire bytes ingested in the current capture session.
+    - packets_per_second / bytes_per_second: Session-wide cumulative rates.
+    - active_flows: Instantaneous count of concurrent flows meeting active criteria:
+      * TCP: Not terminated by RST or FIN-ACK teardown, and observed within 15s.
+      * UDP/ICMP/OTHER: Packets observed within the 15s sliding activity window.
+    - active_hosts: Distinct IP endpoints participating in active_flows.
+    - total_flows: Cumulative/retained flows currently tracked in the flow table.
+    - total_hosts: Distinct IP endpoints across all tracked flows.
+    - rates: Sliding window throughput rates (1s, 5s, 30s).
+    """
     status: str
     mode: str
     interface: str
@@ -50,6 +64,8 @@ class OverviewResponse(BaseModel):
     bytes_per_second: float
     active_hosts: int
     active_flows: int
+    total_flows: Optional[int] = None
+    total_hosts: Optional[int] = None
     protocols: Dict[str, int]
     extended_protocols: Dict[str, int]
     rates: Dict[str, Any]

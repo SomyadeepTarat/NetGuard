@@ -55,6 +55,7 @@ class CaptureManager:
         self._mode = "DEMO"  # DEMO, LIVE, PCAP
         self._interface_name = "synthetic-demo"
         self._started_at = time.time()
+        self._stopped_at: Optional[float] = None
         self._capture_instance: Optional[PacketCapture] = None
         self._worker_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
@@ -94,11 +95,13 @@ class CaptureManager:
             q_report = self.quality.get_quality_report()
             _, total_alerts = self.repository.get_incidents(limit=1)
 
+            uptime = (self._stopped_at - self._started_at) if (not self._running and self._stopped_at is not None) else max(0.0, time.time() - self._started_at)
+
             return {
                 "running": self._running,
                 "mode": self._mode,
                 "interface": self._interface_name,
-                "uptime": max(0.0, time.time() - self._started_at),
+                "uptime": max(0.0, uptime),
                 "total_packets": snap["total_packets"],
                 "total_bytes": snap["total_bytes"],
                 "protocols": snap["protocols"],
@@ -108,6 +111,8 @@ class CaptureManager:
                 "rates": snap.get("flow_metrics", {}).get("rates", {}),
                 "active_hosts": snap.get("flow_metrics", {}).get("active_hosts", 0),
                 "active_flows": snap.get("flow_metrics", {}).get("active_flows", 0),
+                "total_flows": snap.get("flow_metrics", {}).get("total_flows", 0),
+                "total_hosts": snap.get("flow_metrics", {}).get("total_hosts", 0),
                 "capture_quality": q_report,
                 "model_available": self.detector.model_available,
                 "model_scope": getattr(self.detector, 'bundle', {}).get('scope', 'unavailable') if self.detector.bundle else "rule-only fallback",
@@ -131,6 +136,12 @@ class CaptureManager:
                 raise RuntimeError("Capture is already running. Stop the active session first.")
             self._error = None
             self._stop_event.clear()
+            self.analyzer.reset()
+            self._timeseries.clear()
+            self._last_sec_packets = 0
+            self._last_sec_bytes = 0
+            self._started_at = time.time()
+            self._stopped_at = None
 
             if mode == "demo":
                 self._mode = "DEMO"
@@ -138,7 +149,6 @@ class CaptureManager:
                 self.quality.set_mode("DEMO", "synthetic-demo")
                 self._worker_thread = threading.Thread(target=self._run_demo_loop, daemon=True)
                 self._running = True
-                self._started_at = time.time()
                 self._worker_thread.start()
 
             elif mode == "pcap":
@@ -179,6 +189,7 @@ class CaptureManager:
             if not self._running:
                 return
             self._running = False
+            self._stopped_at = time.time()
             self._stop_event.set()
 
             if self._capture_instance is not None:
@@ -209,12 +220,14 @@ class CaptureManager:
                         gap = min(0.05, max(0.001, (pkt_time - last_time) * 0.1))
                         time.sleep(gap)
                     last_time = pkt_time
+                    raw.time = time.time()
                     self._ingest_packet(raw)
         except Exception as error:
             self._error = str(error)
         finally:
             with self._lock:
                 self._running = False
+                self._stopped_at = time.time()
 
     def _run_demo_loop(self) -> None:
         """Plays through generated demo PCAPs in a continuous deterministic loop."""
@@ -236,6 +249,7 @@ class CaptureManager:
                             if self._stop_event.is_set():
                                 break
                             time.sleep(0.005)  # smooth pacing ~ 200 pkts/s
+                            raw.time = time.time()
                             self._ingest_packet(raw)
                 except Exception:
                     pass

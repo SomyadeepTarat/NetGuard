@@ -44,6 +44,8 @@ export interface OverviewData {
   bytes_per_second: number
   active_hosts: number
   active_flows: number
+  total_flows?: number
+  total_hosts?: number
   protocols: Record<string, number>
   extended_protocols: Record<string, number>
   rates: {

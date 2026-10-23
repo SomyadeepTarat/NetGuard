@@ -171,7 +171,7 @@ Run the full automated test suite covering parser logic, flow aggregation, captu
 .venv\Scripts\pytest.exe -v
 ```
 
-All 36 unit and integration test suites run offline without live capture hardware or administrative permissions.
+All 54 unit, integration, and regression test suites run offline without live capture hardware or administrative permissions.
 
 ---
 
