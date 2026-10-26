@@ -5,13 +5,15 @@ from pathlib import Path
 from scapy.all import Ether, IP, TCP, UDP, Raw, wrpcap
 
 
-def generate(directory, sessions=8):
+def generate(directory, sessions=8, stop_event=None):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     manifest = []
     for split, offset in [('train', 0), ('validation', 100), ('test', 200)]:
         for category in ('BENIGN', 'PORT_SCAN', 'SYN_FLOOD', 'TRAFFIC_FLOOD'):
             for session in range(sessions):
+                if stop_event is not None and stop_event.is_set():
+                    return None
                 rng = random.Random(offset + session)
                 start = 1700000000 + (offset + session)*100
                 src, dst = f'10.0.{offset//100}.{session+1}', '192.168.1.10'
@@ -23,6 +25,8 @@ def generate(directory, sessions=8):
                     p.time = start+t
                     packets.append(p)
                 for second in range(12):
+                    if stop_event is not None and stop_event.is_set():
+                        return None
                     if category == 'BENIGN':
                         # Normal sessions include bulk downloads and failed connections.
                         for i in range(rng.randint(3, 16)):
@@ -55,3 +59,32 @@ def generate(directory, sessions=8):
     path = directory/'manifest.json'
     path.write_text(json.dumps(manifest, indent=2))
     return path
+
+
+def build_demo_reference(directory, stop_event=None):
+    """Reference from original synthetic TRAIN/VALIDATION PCAPs, never TEST.
+
+    Short demo sessions supply overlapping windows. This reference is for the
+    offline demonstration only and never carries into real live capture.
+    """
+    from backend.ml.evidence_fusion import EvidenceFusionEngine, FusionConfig
+    from backend.ml.replay import replay_stream
+    config = FusionConfig(fit_windows=16, calibration_windows=32)
+    blocks = []
+    for split, required in [('train', config.fit_windows), ('validation', config.calibration_windows)]:
+        rows = []
+        for path in sorted(Path(directory).glob(f'{split}-BENIGN-*.pcap')):
+            for row in replay_stream(path):
+                if stop_event is not None and stop_event.is_set():
+                    return None
+                rows.append(row)
+                if len(rows) >= required:
+                    break
+            if len(rows) >= required:
+                break
+        if len(rows) < required:
+            return None
+        blocks.extend(rows[:required])
+    engine = EvidenceFusionEngine(config)
+    engine.fit_reference(blocks, scope='synthetic-demo-overlapping-reference')
+    return engine

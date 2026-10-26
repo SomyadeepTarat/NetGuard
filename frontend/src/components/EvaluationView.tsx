@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import type { EvaluationData } from '../types'
 import { api } from '../api'
+import { FusionEvaluation } from './FusionEvaluation'
 import { PageHeader } from './PageHeader'
 
 export const EvaluationView: React.FC = () => {
@@ -42,6 +43,7 @@ export const EvaluationView: React.FC = () => {
 
   return (
     <div>
+      <FusionEvaluation />
       {/* Page Header */}
       <PageHeader
         title="Model Evaluation & Empirical Benchmark"

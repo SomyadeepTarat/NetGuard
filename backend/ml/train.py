@@ -5,7 +5,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import sklearn
-from sklearn.ensemble import RandomForestClassifier
+from backend.ml.algorithms import build_classifier, CLASSIFIER_ALGORITHM, session_calibration_folds
 from sklearn.metrics import classification_report, confusion_matrix
 from backend.ml.features import FEATURES, SCHEMA
 from backend.ml.replay import replay
@@ -87,12 +87,12 @@ def metrics(truth, predictions, rows, ids, sessions):
 
 def train(manifest, output):
     sessions = load_manifest(manifest)
-    train_rows, y, _ = samples(sessions, 'train')
+    train_rows, y, train_ids = samples(sessions, 'train')
     validation, vy, _ = samples(sessions, 'validation')
     if set(y) != {'BENIGN', 'PORT_SCAN', 'SYN_FLOOD', 'TRAFFIC_FLOOD'}:
         raise ValueError('Training requires benign and all three attack classes')
-    model = RandomForestClassifier(n_estimators=100, max_depth=10, min_samples_leaf=2,
-                                   class_weight='balanced', random_state=42, n_jobs=1)
+    folds = session_calibration_folds(matrix(train_rows), y, train_ids)
+    model = build_classifier(cv=folds)
     model.fit(matrix(train_rows), y)
     probabilities = model.predict_proba(matrix(validation))
     labels = model.classes_[probabilities.argmax(axis=1)]
@@ -106,14 +106,16 @@ def train(manifest, output):
         options.append((2*tp/max(2*tp+2*fp+fn, 1), threshold))
     threshold = max(options)[1]
     scope = 'synthetic-demo' if any(s.get('scope') == 'synthetic-demo' for s in sessions) else 'user-supplied; independently validate'
-    bundle = {'schema': SCHEMA, 'features': FEATURES, 'model': model,
+    bundle = {'schema': SCHEMA, 'features': FEATURES, 'model': model, 'algorithm': CLASSIFIER_ALGORITHM,
+              'calibration': 'sigmoid; capture-grouped cross-validation within training split',
               'threshold': threshold, 'scope': scope, 'training_sessions': [s['session'] for s in sessions if s['split'] == 'train'],
               'score_note': 'Uncalibrated classifier score, not probability of a real attack'}
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, output)
     detector = Detector(output)
-    report = {'scope': scope, 'sklearn_version': sklearn.__version__,
+    report = {'scope': scope, 'algorithm': CLASSIFIER_ALGORITHM, 'sklearn_version': sklearn.__version__,
+              'calibration': bundle['calibration'],
               'delay_note': 'Seconds from first retained capture packet; session-wide attacks, not mixed-traffic onset latency', 'threshold': threshold, 'features': FEATURES,
               'train_windows': len(y), 'validation_windows': len(vy), 'tests': {}}
     for loss in (0, .1, .3):

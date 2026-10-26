@@ -39,9 +39,9 @@
 - [x] Unit tests for capture quality states and zero-drop / positive-drop / unknown reporting in `tests/test_capture_quality.py`.
 
 ### Phase 4 — Trustworthy Detection & Evidence Fusion
-- [x] Preserve Random Forest 4-class model (`BENIGN`, `PORT_SCAN`, `SYN_FLOOD`, `TRAFFIC_FLOOD`) with feature schema validation.
+- [x] Preserve RBF-kernel SVM 4-class model (`BENIGN`, `PORT_SCAN`, `SYN_FLOOD`, `TRAFFIC_FLOOD`) with feature schema validation.
 - [x] Maintain transparent deterministic rules with feature thresholds and units.
-- [x] Add benign baseline Anomaly Detector (Isolation Forest) with warm-up state and poison prevention (`backend/ml/anomaly.py`).
+- [x] Add benign baseline Anomaly Detector (novelty-mode Local Outlier Factor) with warm-up state and poison prevention (`backend/ml/anomaly.py`).
 - [x] Evidence Fusion: present classifier score, rule decision, anomaly status, and capture quality side by side without an arbitrary black-box trust score.
 - [x] Safe fallback when model is absent or not trained.
 - [x] Unit tests in `tests/test_detection.py`.

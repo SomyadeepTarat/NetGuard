@@ -10,6 +10,7 @@ import { AlertsView } from './components/AlertsView'
 import { ReplayLabView } from './components/ReplayLabView'
 import { EvaluationView } from './components/EvaluationView'
 import { SettingsView } from './components/SettingsView'
+import { FusionPanel } from './components/FusionPanel'
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
@@ -62,6 +63,8 @@ export const App: React.FC = () => {
         {/* Analytical Workspace Canvas */}
         <main className="workspace-canvas">
           {activeTab === 'overview' && (
+            <>
+            <FusionPanel overview={overview} />
             <OverviewView
               overview={overview}
               timeseries={timeseries}
@@ -69,6 +72,7 @@ export const App: React.FC = () => {
               onNavigateToFlows={() => setActiveTab('flows')}
               onNavigateToHosts={() => setActiveTab('hosts')}
             />
+            </>
           )}
           {activeTab === 'flows' && <FlowsView />}
           {activeTab === 'hosts' && <HostGraphView />}

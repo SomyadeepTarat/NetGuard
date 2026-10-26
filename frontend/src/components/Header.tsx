@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleMobileNav,
 }) => {
   const [showModal, setShowModal] = useState(false)
-  const [startMode, setStartMode] = useState<'demo' | 'live' | 'pcap'>('demo')
+  const [startMode, setStartMode] = useState<'auto' | 'demo' | 'live' | 'pcap'>('auto')
   const [ifaceInput, setIfaceInput] = useState('')
   const [pcapInput, setPcapInput] = useState('')
   const [filterInput, setFilterInput] = useState('')
@@ -41,8 +41,8 @@ export const Header: React.FC<HeaderProps> = ({
     try {
       await api.startCapture(
         startMode,
-        startMode === 'live' ? ifaceInput : undefined,
-        startMode === 'pcap' ? pcapInput : undefined,
+        startMode === 'live' || startMode === 'auto' ? ifaceInput || undefined : undefined,
+        startMode === 'pcap' || startMode === 'auto' ? pcapInput || undefined : undefined,
         filterInput || undefined
       )
       setShowModal(false)
@@ -229,6 +229,7 @@ export const Header: React.FC<HeaderProps> = ({
                   value={startMode}
                   onChange={(e) => setStartMode(e.target.value as any)}
                 >
+                  <option value="auto">Automatic: actual network → dataset fallback</option>
                   <option value="demo">Deterministic Synthetic Demo (Offline Simulation)</option>
                   <option value="live">Live Network Interface (Authorized Promiscuous Monitoring)</option>
                   <option value="pcap">Offline PCAP Replay</option>
@@ -244,7 +245,13 @@ export const Header: React.FC<HeaderProps> = ({
                 </div>
               )}
 
-              {startMode === 'live' && (
+              {startMode === 'auto' && (
+                <div className="callout callout-info" style={{ margin: 0 }}>
+                  Uses an active local adapter when the capture driver is ready. Falls back to your PCAP dataset and retries live capture every 5 seconds. Without a dataset, synthetic fixtures are clearly labeled.
+                </div>
+              )}
+
+              {(startMode === 'live' || startMode === 'auto') && (
                 <>
                   <div>
                     <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>
@@ -268,7 +275,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </>
               )}
 
-              {startMode === 'pcap' && (
+              {(startMode === 'pcap' || startMode === 'auto') && (
                 <div>
                   <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 600, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '4px' }}>
                     Relative PCAP Capture Path

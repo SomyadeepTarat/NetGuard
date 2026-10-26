@@ -22,6 +22,7 @@ from backend.api.schemas import (
 )
 from backend.services.pcap_resolver import PcapSecurityError
 from backend.api.capture_manager import CaptureManager
+from backend.ml.algorithms import CLASSIFIER_ALGORITHM, ANOMALY_ALGORITHM
 
 router = APIRouter(prefix="/api")
 
@@ -84,7 +85,8 @@ def start_capture(req: CaptureStartRequest):
             pcap_path=req.pcap_path,
             capture_filter=req.capture_filter
         )
-        return {"status": "started", "mode": req.mode, "interface": mgr.interface}
+        return {"status": "started", "mode": mgr.mode, "interface": mgr.interface,
+                "source_selection": mgr.get_status()['source_selection']}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -116,6 +118,9 @@ def get_overview():
         rates=st["rates"],
         capture_quality=st["capture_quality"],
         recent_alerts_count=st["recent_alerts_count"],
+        source_selection=st['source_selection'],
+        research_fusion=st['research_fusion'],
+        error=st['error'],
         total_flows=st.get("total_flows"),
         total_hosts=st.get("total_hosts"),
     )
@@ -125,6 +130,19 @@ def get_overview():
 def get_timeseries():
     mgr = get_manager()
     return mgr.get_timeseries()
+
+
+@router.get('/detection/status')
+def get_detection_status():
+    return get_manager().detection_status()
+
+
+@router.get('/detection/evaluation')
+def get_fusion_evaluation():
+    path = Path('artifacts/research/fusion_evaluation.json')
+    if not path.exists():
+        return {'status': 'NOT_EVALUATED', 'message': 'Run python -m backend.ml.evaluate_fusion'}
+    return {'status': 'EVALUATED', 'report': json.loads(path.read_text())}
 
 
 @router.get("/flows")
@@ -301,6 +319,8 @@ def get_settings():
         "mode": mgr.mode,
         "interface": mgr.interface,
         "model_loaded": mgr.detector.model_available,
+        "classifier_algorithm": CLASSIFIER_ALGORITHM,
+        "anomaly_algorithm": ANOMALY_ALGORITHM,
         "anomaly_baseline_ready": mgr.anomaly_detector.is_ready,
         "retention_policy": "Local SQLite (metadata only, no raw packet payloads)",
     }

@@ -2,7 +2,7 @@
 
 Combines:
 1. Explainable rule paths with explicit thresholds, units, and measured values.
-2. Supervised 4-class Random Forest model (uncalibrated score, not attack probability).
+2. Supervised 4-class RBF SVM (class score, not verified attack probability).
 3. Benign baseline anomaly detector for outlier/unknown patterns.
 4. Capture-quality gating (degraded observation marks findings UNCERTAIN, never benign).
 """
@@ -13,6 +13,8 @@ import joblib
 from backend.ml.features import FEATURES, SCHEMA
 from backend.ml.fragility import handshake_fragility
 from backend.ml.anomaly import AnomalyDetector
+from backend.ml.evidence_fusion import EvidenceFusionEngine
+from backend.ml.algorithms import CLASSIFIER_ALGORITHM, is_supported_classifier
 
 EXPLAINABLE_RULES = [
     {
@@ -83,11 +85,14 @@ class Detector:
         self.threshold = 0.8
         self.model_available = False
         self.anomaly_detector = anomaly_detector or AnomalyDetector()
+        self.fusion_engine = EvidenceFusionEngine()
 
         if model_path is not None:
             p = Path(model_path)
             if p.exists():
                 self.bundle = joblib.load(p)
+                if self.bundle.get('algorithm') != CLASSIFIER_ALGORITHM or not is_supported_classifier(self.bundle.get('model')):
+                    raise ValueError('Unsupported classifier artifact; retrain with python -m backend.ml train --manifest artifacts/demo/manifest.json')
                 if self.bundle.get('schema') != SCHEMA or self.bundle.get('features') != FEATURES:
                     raise ValueError('Model feature schema mismatch; retrain the model')
                 self.threshold = self.bundle['threshold'] if threshold is None else threshold
@@ -99,6 +104,8 @@ class Detector:
 
     def predict(self, row: dict) -> dict:
         features = row['features']
+        quality = row.get('quality', {})
+        degraded = bool(any(quality.get(k) for k in ('state_evictions', 'late_packets', 'queue_drops', 'parser_errors')))
         rule_class = baseline(features)
         detailed_rules = evaluate_rules(features)
         triggered_rules = [r for r in detailed_rules if r["triggered"]]
@@ -128,7 +135,7 @@ class Detector:
         # Baseline anomaly detector scoring
         if anomaly_detector is not None:
             anomaly_result = anomaly_detector.score(features)
-            if model_class == 'BENIGN' and rule_class == 'BENIGN':
+            if model_class == 'BENIGN' and rule_class == 'BENIGN' and not anomaly_result.get('is_anomalous') and not degraded:
                 anomaly_detector.feed_baseline_sample(features)
             else:
                 anomaly_detector.freeze_baseline(True)
@@ -139,6 +146,11 @@ class Detector:
                 "note": "Anomaly detector not attached."
             }
 
+        engine = getattr(self, 'fusion_engine', None)
+        research = engine.score(row, allow_reference=(rule_class == 'BENIGN' and model_class == 'BENIGN'
+                                and not anomaly_result.get('is_anomalous') and not degraded)) if engine else {
+            'status': 'UNAVAILABLE', 'is_anomalous': False}
+
         # Primary decision determination
         if model_available:
             decision = 'BENIGN' if model_class == 'BENIGN' else ('SUSPECTED' if score >= self.threshold else 'UNCERTAIN')
@@ -146,9 +158,18 @@ class Detector:
             # Fallback to rule path if model unavailable
             decision = 'BENIGN' if rule_class == 'BENIGN' else 'SUSPECTED'
 
+        prediction = model_class if model_available else rule_class
+        # Preserve explicit rule evidence even when a classifier votes benign.
+        if rule_class != 'BENIGN' and decision == 'BENIGN':
+            prediction, decision = rule_class, 'UNCERTAIN'
+        if research.get('is_anomalous') and decision == 'BENIGN':
+            prediction, decision = 'ANOMALOUS_UNKNOWN_PATTERN', 'SUSPECTED'
+        elif anomaly_result.get('is_anomalous') and decision == 'BENIGN':
+            prediction, decision = 'ANOMALOUS_UNKNOWN_PATTERN', 'UNCERTAIN'
+
         # Capture quality degradation safeguard
-        quality = row.get('quality', {})
-        if quality.get('state_evictions') or quality.get('late_packets') or quality.get('queue_drops'):
+        if degraded or (prediction == 'ANOMALOUS_UNKNOWN_PATTERN' and
+                        research.get('visibility', {}).get('status') == 'SENSITIVE'):
             if decision == 'SUSPECTED':
                 decision = 'UNCERTAIN'
 
@@ -173,12 +194,12 @@ class Detector:
             "triggered_rules": [r["rule_id"] for r in triggered_rules],
             "anomaly_status": anomaly_result["label"],
             "agreement_status": agreement_status,
-            "evidence_quality": "DEGRADED" if (quality.get('state_evictions') or quality.get('late_packets') or quality.get('queue_drops')) else "HEALTHY",
+            "evidence_quality": "DEGRADED" if degraded else "NO_KNOWN_INTERNAL_LOSS",
         }
 
         return {
             **row,
-            'prediction': model_class if model_available else rule_class,
+            'prediction': prediction,
             'score': score,
             'decision': decision,
             'fragility': fragility,
@@ -189,6 +210,7 @@ class Detector:
             'detailed_rules': detailed_rules,
             'anomaly': anomaly_result,
             'fusion': fusion,
+            'research_fusion': research,
             'evidence': {
                 k: round(features[k], 4)
                 for k in ('syn_rate', 'unique_ports', 'completed_fraction', 'bytes_per_second', 'response_fraction')

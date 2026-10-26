@@ -23,7 +23,7 @@ class InterfaceItem(BaseModel):
 
 
 class CaptureStartRequest(BaseModel):
-    mode: str = Field(default="demo", pattern="^(demo|live|pcap)$")
+    mode: str = Field(default="auto", pattern="^(auto|demo|live|pcap)$")
     interface: Optional[str] = None
     pcap_path: Optional[str] = None
     capture_filter: Optional[str] = None
@@ -71,6 +71,9 @@ class OverviewResponse(BaseModel):
     rates: Dict[str, Any]
     capture_quality: Dict[str, Any]
     recent_alerts_count: int
+    source_selection: Dict[str, Any] = Field(default_factory=dict)
+    research_fusion: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
 
 
 class TimeseriesPoint(BaseModel):

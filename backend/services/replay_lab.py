@@ -36,6 +36,7 @@ def clone_isolated_detector(base_detector: Detector) -> Detector:
     )
     detector.bundle = base_detector.bundle
     detector.model_available = base_detector.model_available
+    detector.fusion_engine = base_detector.fusion_engine.fresh()
     return detector
 
 

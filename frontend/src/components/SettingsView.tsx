@@ -204,7 +204,7 @@ export const SettingsView: React.FC = () => {
                         settings?.model_loaded ? 'badge-healthy' : 'badge-unknown'
                       }`}
                     >
-                      {settings?.model_loaded ? 'RANDOM FOREST LOADED' : 'RULE-ONLY FALLBACK'}
+                      {settings?.model_loaded ? 'RBF SVM LOADED' : 'RULES + FUSION FALLBACK'}
                     </span>
                   </td>
                 </tr>
@@ -287,7 +287,7 @@ export const SettingsView: React.FC = () => {
               3. Human Analyst Verification Boundary
             </div>
             <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', lineHeight: 1.5 }}>
-              Classifier confidence scores represent uncalibrated Random Forest tree votes, not absolute attack probabilities. Suspicious findings require human verification before remediation.
+              Classifier scores come from the scaled RBF-kernel SVM. They are not verified probabilities of attack intent. Local Outlier Factor reports departures from the reference neighborhood. Suspicious findings require human review.
             </div>
           </div>
         </div>

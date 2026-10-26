@@ -26,8 +26,8 @@ graph TD
     D -->|Rolling 5s windows| E[Feature Extractor v1]
     
     E --> F1[Transparent Explainable Rules]
-    E --> F2[Random Forest 4-Class Classifier]
-    E --> F3[Isolation Forest Baseline Anomaly Detector]
+    E --> F2[RBF-kernel SVM 4-Class Classifier]
+    E --> F3[novelty-mode Local Outlier Factor Baseline Anomaly Detector]
 
     A1 -.->|NIC / Kernel stats| G[Capture Quality Subsystem]
     B -.->|Parse errors, truncation| G
@@ -55,8 +55,8 @@ graph TD
 - `backend/capture/packet_capture.py`: Non-blocking AsyncSniffer integration, interface enumeration, safe shutdown, and BPF filtering.
 - `backend/services/capture_quality.py`: Pluggable telemetry assessor reporting `HEALTHY`, `DEGRADED`, `UNKNOWN`, and `UNAVAILABLE` states for OS drops, queue drops, and evictions.
 - `backend/ml/features.py`: Standardized 12-feature sliding window extractor (`netguard-source-window-v1`).
-- `backend/ml/detector.py`: Random Forest scoring, baseline deterministic rules, and confidence assessment.
-- `backend/ml/anomaly.py`: Isolation Forest anomaly detector with benign warm-up baseline and poison protection.
+- `backend/ml/detector.py`: RBF-kernel SVM scoring, baseline deterministic rules, and confidence assessment.
+- `backend/ml/anomaly.py`: novelty-mode Local Outlier Factor anomaly detector with benign warm-up baseline and poison protection.
 - `backend/ml/fragility.py`: Handshake pair sensitivity checker (counterfactual completion).
 - `backend/ml/replay.py`: Deterministic offline PCAP replay supporting seedable random loss, burst loss, and directional omission.
 - `backend/ml/train.py` & `demo.py`: Session-separated training, validation threshold selection, and synthetic test PCAP generator.

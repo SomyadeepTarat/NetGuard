@@ -1,5 +1,7 @@
 from scapy.all import AsyncSniffer, conf
 from backend.analyzer.packet_parser import parse_packet
+from threading import Event
+from time import monotonic
 
 
 def list_interfaces():
@@ -25,9 +27,25 @@ class PacketCapture:
         if capture_filter:
             options["filter"] = capture_filter
         self.sniffer = AsyncSniffer(**options)
+        self._offline = bool(pcap)
 
     def start(self):
+        if self._offline:
+            self.sniffer.start()
+            return
+        ready = Event()
+        self.sniffer.kwargs['started_callback'] = ready.set
         self.sniffer.start()
+        deadline = monotonic() + 3.0
+        while not ready.wait(0.05):
+            error = getattr(self.sniffer, 'exception', None)
+            if error:
+                raise error
+            if monotonic() >= deadline:
+                try:
+                    self.stop()
+                finally:
+                    raise RuntimeError('Capture backend did not become ready within 3 seconds')
 
     def stop(self):
         if self.sniffer.running:

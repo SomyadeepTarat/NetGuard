@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import type { EvidencePassport } from '../types'
 import { api } from '../api'
+import { FusionEvidence } from './FusionPanel'
 import { PageHeader } from './PageHeader'
 
 export const AlertsView: React.FC = () => {
@@ -671,6 +672,13 @@ export const AlertsView: React.FC = () => {
                   ))}
                 </div>
               </div>
+
+              {selectedPassport.research_fusion?.status && (
+                <section className="card" style={{ padding: 16 }}>
+                  <h3 className="card-title" style={{ marginBottom: 12 }}>Observation-aware fusion evidence</h3>
+                  <FusionEvidence result={selectedPassport.research_fusion} />
+                </section>
+              )}
 
               {/* 5. Anomaly Baseline Detector Status */}
               {selectedPassport.anomaly && (

@@ -94,6 +94,10 @@ export const api = {
   cancelReplay: (runId: string) => request<{ status: string; run_id: string }>(`/replays/${runId}/cancel`, { method: 'POST' }),
 
   getEvaluation: () => request<EvaluationData>('/evaluation'),
+  getFusionEvaluation: () => request<{
+    status: string
+    report?: { scope: string; runs: Array<{ results: Array<{ method: string; tp: number; fp: number; fn: number; tn: number; abstentions: number }> }> }
+  }>('/detection/evaluation'),
   getSettings: () => request<any>('/settings'),
 
   // ============================================================================

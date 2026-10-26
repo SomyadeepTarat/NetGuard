@@ -104,6 +104,15 @@ class FeatureExtractor:
                       (events[-1][0]-events[0][0])/max(n-1, 1),
                       len(completed)/max(len(syns), 1)]
             rows.append({'timestamp': t, 'source': actor, 'features': dict(zip(FEATURES, values)),
+                         'graph_context': {
+                             'out_degree': len({e[1].destination_ip for e in outgoing}),
+                             'edges': sorted({f'{e[1].destination_ip}|{e[1].destination_port}|{e[1].protocol}' for e in outgoing})[:256],
+                             'edges_truncated': len({(e[1].destination_ip, e[1].destination_port, e[1].protocol) for e in outgoing}) > 256,
+                         },
+                         'traffic_context': {
+                             'destination_ip': outgoing[-1][1].destination_ip if outgoing else None,
+                             'protocol': outgoing[-1][1].protocol if outgoing else events[-1][1].protocol,
+                         },
                          'handshake_context': {'syn_flows': len(syns), 'completed_flows': len(completed),
                                                'repairable_flows': len(repairable), 'window_seconds': self.window},
                          'quality': {'state_evictions': self.evictions, 'late_packets': self.late_packets,

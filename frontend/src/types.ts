@@ -55,6 +55,9 @@ export interface OverviewData {
   }
   capture_quality: CaptureQualityReport
   recent_alerts_count: number
+  source_selection?: { automatic: boolean; reason: string; recheck_seconds: number }
+  research_fusion?: FusionStatus
+  error?: string | null
 }
 
 export interface TimeseriesPoint {
@@ -135,7 +138,8 @@ export interface AnomalyInfo {
   status: string
   is_anomalous: boolean
   anomaly_score: number | null
-  forest_score?: number | null
+  lof_score?: number | null
+  algorithm?: string
   max_feature_deviation_sigma?: number | null
   label: string
   note: string
@@ -143,6 +147,7 @@ export interface AnomalyInfo {
 }
 
 export interface EvidencePassport {
+  research_fusion?: FusionResult
   alert_id: string
   timestamp: number
   iso_time: string
@@ -173,6 +178,32 @@ export interface EvidencePassport {
   what_remains_uncertain: string
   recommended_steps: string[]
   provenance: string
+}
+
+export interface FusionResult {
+  status: string
+  is_anomalous: boolean
+  instant_candidate?: boolean
+  p_value?: number
+  feature_p_value?: number
+  graph_p_value?: number
+  temporal_evidence?: number
+  temporal_threshold?: number
+  visibility?: { status: string; masked_p_value: number | null; intervention?: string }
+  reference_scope?: string
+  reference_windows?: number
+  reference_target?: number
+  top_deviations?: Array<{ feature: string; robust_deviation: number }>
+}
+
+export interface FusionStatus {
+  version: string
+  ready: boolean
+  config: { fit_windows: number; calibration_windows: number; alpha: number }
+  reference_windows: number
+  reference_scope: string
+  evaluated_windows: number
+  last_result: FusionResult | null
 }
 
 export interface ReplayExperiment {

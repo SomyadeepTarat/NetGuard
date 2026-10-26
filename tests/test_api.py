@@ -81,3 +81,17 @@ class ApiTests(unittest.TestCase):
         resp = self.client.get("/api/evaluation")
         self.assertEqual(resp.status_code, 200)
         self.assertIn(resp.json()["status"], ("EVALUATED", "NOT_EVALUATED"))
+
+    def test_fusion_status_endpoint(self):
+        response = self.client.get('/api/detection/status')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['version'], 'observation-aware-fusion-v1')
+        self.assertIn('recent_windows', response.json())
+        overview = self.client.get('/api/overview').json()
+        self.assertIn('source_selection', overview)
+        self.assertIn('research_fusion', overview)
+
+    def test_fusion_evaluation_endpoint(self):
+        response = self.client.get('/api/detection/evaluation')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(response.json()['status'], ('NOT_EVALUATED', 'EVALUATED'))

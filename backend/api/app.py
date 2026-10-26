@@ -1,6 +1,7 @@
 """FastAPI application factory for the NetGuard Observatory."""
 from contextlib import asynccontextmanager
 from pathlib import Path
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,17 +14,21 @@ capture_manager_instance: CaptureManager | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global capture_manager_instance
-    # Initialize manager in deterministic demo mode by default
-    capture_manager_instance = CaptureManager()
+    capture_manager_instance = CaptureManager(
+        model_path=os.environ.get('NETGUARD_MODEL_PATH', 'artifacts/netguard.joblib'),
+        db_path=os.environ.get('NETGUARD_DB_PATH', 'artifacts/netguard_incidents.db'))
     set_capture_manager(capture_manager_instance)
-    # Start default demo capture so reviewer has live updating data out-of-the-box
     try:
-        capture_manager_instance.start_capture(mode="demo")
+        capture_manager_instance.start_capture(
+            mode=os.environ.get('NETGUARD_MODE', 'auto').lower(),
+            interface=os.environ.get('NETGUARD_INTERFACE') or None,
+            pcap_path=os.environ.get('NETGUARD_DATASET_PCAP') or None)
     except Exception as e:
-        print(f"Initial demo start note: {e}")
+        print(f"Initial ingestion start failed: {e}")
+        capture_manager_instance._error = str(e)
     yield
     if capture_manager_instance:
-        capture_manager_instance.stop_capture()
+        capture_manager_instance.close()
 
 
 def create_app() -> FastAPI:

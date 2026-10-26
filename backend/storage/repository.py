@@ -75,6 +75,9 @@ class IncidentRepository:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_timestamp ON incidents(timestamp DESC)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_class ON incidents(detector_class)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_source ON incidents(source_ip)")
+            columns = {row[1] for row in conn.execute('PRAGMA table_info(incidents)')}
+            if 'research_fusion_json' not in columns:
+                conn.execute("ALTER TABLE incidents ADD COLUMN research_fusion_json TEXT DEFAULT '{}'")
             conn.commit()
 
     def save_incident(self, incident: dict) -> str:
@@ -93,8 +96,8 @@ class IncidentRepository:
                     detector_class, detector_score, is_calibrated, decision, model_scope,
                     rule_triggers_json, anomaly_json, capture_quality_json, evidence_json,
                     fragility_json, why_flagged, what_remains_uncertain, recommended_steps_json,
-                    provenance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    provenance, research_fusion_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 alert_id,
                 ts,
@@ -115,7 +118,8 @@ class IncidentRepository:
                 why_flagged,
                 what_remains_uncertain,
                 json.dumps(steps),
-                incident.get("provenance", "offline-replay")
+                incident.get("provenance", "offline-replay"),
+                json.dumps(incident.get('research_fusion', {}))
             ))
             conn.commit()
         return alert_id
@@ -217,6 +221,7 @@ class IncidentRepository:
             "what_remains_uncertain": row["what_remains_uncertain"],
             "recommended_steps": json.loads(row["recommended_steps_json"] or "[]"),
             "provenance": row["provenance"],
+            "research_fusion": json.loads(row['research_fusion_json'] or '{}'),
         }
 
     def _generate_why_flagged(self, inc: dict) -> str:
